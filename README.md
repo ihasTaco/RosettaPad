@@ -1,40 +1,62 @@
-# DualSense to PS3 Adapter
-
-Use a PS5 DualSense controller on PlayStation 3 via a Raspberry Pi Zero 2W, with full PS button support and no jailbreak required!
-
 ## What This Does
 
-This adapter allows a DualSense controller connected via Bluetooth to the Pi to appear as an authentic DualShock 3 controller to the PS3. Unlike generic USB adapters, **the PS button works** because we properly emulate the DS3's USB protocol.
+This adapter lets a DualSense controller connect to the Raspberry Pi via Bluetooth and appear to the PS3 as a genuine DualShock 3. Unlike generic USB adapters, the PS button works because I fully emulated the DS3’s USB protocol.
 
 ## Features
 
 ### Current
-- ✅ Full DS3 emulation with PS button support
-- ✅ All buttons and analog sticks
-- ✅ Analog triggers (L2/R2)
-- ✅ Auto-reconnect on controller disconnect
-- ✅ Systemd service for auto-start
+- [x] Full DS3 emulation with PS button support
+- [x] All buttons and analog sticks
+- [x] Analog triggers (L2/R2)
+- [x] Auto-reconnect on controller disconnect
+- [x] Systemd service for auto-start
 
 ### Planned
-- 🔲 Web configuration interface
-- 🔲 Bluetooth pairing via web UI
-- 🔲 Custom button remapping
-- 🔲 Macro system
-- 🔲 Profile system with hotkey switching
-- 🔲 DualSense lightbar control
-- 🔲 Adaptive trigger configuration
-- 🔲 Rumble/haptic feedback forwarding
-- 🔲 Gyroscope/motion controls
-- 🔲 Touchpad as precision joystick
-- 🔲 Controller stats (battery, latency)
-- 🔲 Debug tools and logging
-- 🔲 Add ability to use on ps5 and ps4 systems
+- [ ] Web configuration interface
+- [ ] Bluetooth pairing via web UI
+- [ ] Custom button remapping
+- [ ] Macro system
+- [ ] Profile system with hotkey switching
+- [ ] DualSense lightbar control
+- [ ] Adaptive trigger configuration
+- [ ] Rumble/haptic feedback forwarding
+- [ ] Gyroscope/motion controls
+- [ ] Touchpad as precision joystick
+- [ ] Controller stats (battery, latency)
+- [ ] Debug tools and logging
+- [ ] Add ability to use on PS5 and PS4 systems
+- [ ] Test setup on ESP32-S3 microcontrollers (Explore feasibility as an alternative to Raspberry Pi Zero 2W.)
+- [ ] Modularize HID reports (Enable easier integration of other generic controllers.)
+
+### The Goal
+
+Feature complete would look like:
+A ready to-go raspberry pi image for easier installation and setup.
+Web UI Features
+ - Pair DualSense controller.
+ - Display latency and battery status. (I would like to see the PS3 show the controllers battery status, but I think with how the PS3 handles controllers connected via usb,  it will always show as charging or charged status)
+ - Profile management:
+   - Macros. (rapid fire, toggles)
+   - Light bar customization. (colors, animations)
+   - Button remapping.
+   - Hotswappable via keybinds on the controller in-game.
+ - Test keybindings and view USB/HID logs.
+
+Future Enhancements
+ - TAS-lite: record, edit, replay inputs.
+ - PS button to power on console. (I think this may be another limitation of the Playstation 3 as it turns off the usb ports (at least for the ultra slim models) and wont accept inputs.)
+ - PS4 & PS5 Support (Hypothetical)
+    - Investigate MITM approach for authentication:
+        - Capture auth request from PS4/PS5.
+        - Relay to controller and return response to console.
+    - Requires PS4/PS5 controller until auth is cracked.
+    - Highly experimental and for future research.
 
 ## Hardware Required
 
 - Raspberry Pi Zero 2W
-- USB data cable (connects Pi's inner/data USB port to PS3)
-- USB power cable (connects Pi's outer/power USB port to power source)
+- USB data cable (connects Pi's data USB port to PS3)
+- USB power cable (connects Pi's power USB port to power source)
 - PS5 DualSense controller
 
 ## How It Works
@@ -43,8 +65,7 @@ This adapter allows a DualSense controller connected via Bluetooth to the Pi to 
 The PS3 only accepts PS button input from "authenticated" Sony controllers. Generic USB gamepads can send all other buttons, but the PS3 ignores the home/PS button from non-Sony devices.
 
 ### The Solution
-We discovered that full DS3 emulation (including PS button) works **without cryptographic authentication** by:
-
+I was half expecting to have to use some kind of crypto-auth to emulate the DS3, but I was happily surprised. All that's needed is the following:
 1. Using the correct Sony USB VID/PID (054c:0268)
 2. Responding to specific USB HID feature report requests (0x01, 0xF2, 0xF5, 0xF7, 0xF8, 0xEF)
 3. Echoing back the 0xEF configuration report exactly as the PS3 sends it
@@ -79,14 +100,14 @@ Uses Linux USB Gadget/ConfigFS with FunctionFS:
 
 ### DS3 Input Report Format (49 bytes)
 ```
-Byte  0:    0x01 (Report ID)
-Byte  1:    Reserved (0x00)
-Byte  2:    Select(0x01), L3(0x02), R3(0x04), Start(0x08), DPad
-Byte  3:    L2(0x01), R2(0x02), L1(0x04), R1(0x08), △(0x10), ○(0x20), ✕(0x40), □(0x80)
-Byte  4:    PS Button (0x01)
-Byte  5:    Reserved
-Bytes 6-7:  Left stick X, Y (0x00-0xFF, center 0x80)
-Bytes 8-9:  Right stick X, Y (0x00-0xFF, center 0x80)
+Byte  0:     0x01 (Report ID)
+Byte  1:     Reserved (0x00)
+Byte  2:     Select(0x01), L3(0x02), R3(0x04), Start(0x08), DPad
+Byte  3:     L2(0x01), R2(0x02), L1(0x04), R1(0x08), △(0x10), ○(0x20), ✕(0x40), □(0x80)
+Byte  4:     PS Button (0x01)
+Byte  5:     Reserved
+Bytes 6-7:   Left stick X, Y (0x00-0xFF, center 0x80)
+Bytes 8-9:   Right stick X, Y (0x00-0xFF, center 0x80)
 Bytes 10-17: D-pad pressure (up, right, down, left) + reserved
 Bytes 18-19: L2, R2 analog pressure (0x00-0xFF)
 Bytes 20-21: L1, R1 pressure
@@ -112,10 +133,10 @@ Byte 11:    PS button (0x01), Touchpad (0x02), Mute (0x04)
 ### Button Mapping
 | DualSense | DS3 |
 |-----------|-----|
-| ✕ | ✕ |
-| ○ | ○ |
-| △ | △ |
-| □ | □ |
+| Cross | Cross |
+| Circle | Circle |
+| Triangle | Triangle |
+| Square | Square |
 | L1/R1 | L1/R1 |
 | L2/R2 | L2/R2 |
 | L3/R3 | L3/R3 |
@@ -153,7 +174,7 @@ sudo systemctl enable ds3-adapter
 ```bash
 bluetoothctl
 > scan on
-# Put DualSense in pairing mode (hold Create + PS until light flashes)
+# Put DualSense in pairing mode (hold Create + PS until light flashes) should show up as 'DualSense Wireless Controller'
 > pair XX:XX:XX:XX:XX:XX
 > trust XX:XX:XX:XX:XX:XX
 > connect XX:XX:XX:XX:XX:XX
@@ -191,5 +212,3 @@ modules-load=dwc2
 ## Credits
 
 Developed through reverse engineering the DS3 USB protocol by analyzing real controller behavior and PS3 initialization sequences.
-
-Key insight: The PS3 doesn't require cryptographic authentication for the PS button - it just needs proper USB enumeration and feature report handling!
