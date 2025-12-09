@@ -389,7 +389,7 @@ int setup_usb_gadget(void) {
 int main(void) {
     pthread_t ds_tid, usb_in_tid, usb_out_tid, usb_ctrl_tid;
     
-    printf("=== DualSense to PS3 Adapter v2 ===\n\n");
+    printf("=== DualSense to PS3 Adapter ===\n\n");
     
     setup_usb_gadget();
     
