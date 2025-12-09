@@ -6,6 +6,29 @@ Use a PS5 DualSense controller on PlayStation 3 via a Raspberry Pi Zero 2W, with
 
 This adapter allows a DualSense controller connected via Bluetooth to the Pi to appear as an authentic DualShock 3 controller to the PS3. Unlike generic USB adapters, **the PS button works** because we properly emulate the DS3's USB protocol.
 
+## Features
+
+### Current
+- ✅ Full DS3 emulation with PS button support
+- ✅ All buttons and analog sticks
+- ✅ Analog triggers (L2/R2)
+- ✅ Auto-reconnect on controller disconnect
+- ✅ Systemd service for auto-start
+
+### Planned
+- 🔲 Web configuration interface
+- 🔲 Bluetooth pairing via web UI
+- 🔲 Custom button remapping
+- 🔲 Macro system
+- 🔲 Profile system with hotkey switching
+- 🔲 DualSense lightbar control
+- 🔲 Adaptive trigger configuration
+- 🔲 Rumble/haptic feedback forwarding
+- 🔲 Gyroscope/motion controls
+- 🔲 Touchpad as precision joystick
+- 🔲 Controller stats (battery, latency)
+- 🔲 Debug tools and logging
+
 ## Hardware Required
 
 - Raspberry Pi Zero 2W
