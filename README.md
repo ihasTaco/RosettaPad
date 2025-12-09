@@ -1,6 +1,6 @@
 # DualSense to PS3 Adapter
 
-Use a PS5 DualSense controller on PlayStation 3 via a Raspberry Pi Zero 2W, with full PS button support!
+Use a PS5 DualSense controller on PlayStation 3 via a Raspberry Pi Zero 2W, with full PS button support and no jailbreak required!
 
 ## What This Does
 
@@ -28,6 +28,7 @@ This adapter allows a DualSense controller connected via Bluetooth to the Pi to 
 - 🔲 Touchpad as precision joystick
 - 🔲 Controller stats (battery, latency)
 - 🔲 Debug tools and logging
+- 🔲 Add ability to use on ps5 and ps4 systems
 
 ## Hardware Required
 
