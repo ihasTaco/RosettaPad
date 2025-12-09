@@ -1,6 +1,8 @@
 ## What This Does
 
-This adapter lets a DualSense controller connect to the Raspberry Pi via Bluetooth and appear to the PS3 as a genuine DualShock 3. Unlike generic USB adapters, the PS button works because I fully emulated the DS3’s USB protocol.
+This adapter lets a DualSense controller connect to the Raspberry Pi via Bluetooth and appear to the PS3 as a genuine DualShock 3. Unlike some generic USB adapters, the PS button works because the DS3's USB protocol is fully emulated.
+
+`Currently this is only made for DualSense (PS5) controllers specifically, it's all I have access to at the moment. If you want me to add new controllers, open an issue and when I have time and we can work out getting the correct HID reports for the controller.`
 
 ## Features
 
