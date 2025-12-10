@@ -1,6 +1,6 @@
 `
 I quite literally just got this working as of 12/9/25.
-I have done almost zero testing other than the quick test of making sure all of the buttons work (including the ps button) as I rushed out the door for work.
+I have done little testing other than the quick test of making sure all of the buttons work (including the ps button) as I rushed out the door for work this morning.
 Please be aware that there is a very high likelyhood something doesn't work.
 If you notice something that is broken or want to request a feature that isn't in the planned features list below, create a new issue!
 `
