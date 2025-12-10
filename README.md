@@ -19,6 +19,7 @@ This adapter lets a DualSense controller connect to the Raspberry Pi via Bluetoo
 - [x] Analog triggers (L2/R2)
 - [x] Auto-reconnect on controller disconnect
 - [x] Systemd service for auto-start
+- [x] Rumble/haptic feedback forwarding
 
 ### Planned
 - [ ] Web configuration interface
@@ -28,7 +29,6 @@ This adapter lets a DualSense controller connect to the Raspberry Pi via Bluetoo
 - [ ] Profile system with hotkey switching
 - [ ] DualSense lightbar control
 - [ ] Adaptive trigger configuration
-- [ ] Rumble/haptic feedback forwarding
 - [ ] Gyroscope/motion controls
 - [ ] Touchpad as precision joystick
 - [ ] Controller stats (battery, latency)
