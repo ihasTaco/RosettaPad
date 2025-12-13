@@ -1,0 +1,288 @@
+/* =================================================================
+   Editor View
+   ================================================================= */
+.editor-view {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 80px);
+}
+
+.editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.back-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.back-btn:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.back-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+.editor-title h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.editor-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.save-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background: var(--accent-blue);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.save-btn:hover {
+    background: #0080f0;
+}
+
+.save-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* =================================================================
+   Editor Content
+   ================================================================= */
+.editor-content {
+    display: flex;
+    gap: 2rem;
+    flex: 1;
+    min-height: 0;
+}
+
+/* =================================================================
+   Sidebar
+   ================================================================= */
+.editor-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.sidebar-section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.sidebar-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.sidebar-nav-item:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.sidebar-nav-item.active {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.1);
+}
+
+.sidebar-nav-item svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+.sidebar-nav-item span:first-of-type {
+    flex: 1;
+}
+
+.nav-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    background: var(--bg-dark);
+    border-radius: 4px;
+}
+
+/* =================================================================
+   Danger Zone
+   ================================================================= */
+.danger-zone {
+    border-color: rgba(255, 61, 87, 0.3);
+}
+
+.danger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem;
+    background: transparent;
+    border: 1px solid var(--accent-red);
+    border-radius: 6px;
+    color: var(--accent-red);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.danger-btn:hover {
+    background: rgba(255, 61, 87, 0.1);
+}
+
+.danger-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+/* =================================================================
+   Editor Main Content
+   ================================================================= */
+.editor-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.editor-section {
+    display: none;
+}
+
+.editor-section.active {
+    display: block;
+}
+
+/* =================================================================
+   Section Toolbar
+   ================================================================= */
+.section-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.toolbar-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.toolbar-count {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.toolbar-right {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+    border-color: var(--accent-blue);
+}
+
+.toolbar-btn.primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+.toolbar-btn.primary:hover {
+    background: #0080f0;
+}
+
+.toolbar-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}

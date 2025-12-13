@@ -1,0 +1,355 @@
+/* =================================================================
+   Remap Cards Grid
+   ================================================================= */
+.remaps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.remap-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.remap-card:hover {
+    border-color: var(--border-light);
+    background: var(--bg-elevated);
+}
+
+.remap-card.disabled {
+    opacity: 0.5;
+}
+
+.remap-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.remap-visual {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.remap-button {
+    width: 48px;
+    height: 48px;
+    background: var(--bg-dark);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.remap-button.from {
+    border: 2px solid var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.remap-button.to {
+    border: 2px solid var(--accent-green);
+    color: var(--accent-green);
+}
+
+.remap-arrow {
+    width: 24px;
+    height: 24px;
+    fill: var(--text-muted);
+}
+
+.remap-card-actions {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.remap-card:hover .remap-card-actions {
+    opacity: 1;
+}
+
+.remap-card-body {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.remap-description {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.remap-from-name {
+    font-weight: 600;
+    color: var(--accent-blue);
+}
+
+.remap-arrow-text {
+    color: var(--text-muted);
+}
+
+.remap-to-name {
+    font-weight: 600;
+    color: var(--accent-green);
+}
+
+.remap-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-dark);
+    border-radius: 4px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* =================================================================
+   Remap Creator
+   ================================================================= */
+.remap-creator-content {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.remap-preview-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.remap-preview-visual {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.preview-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem 2rem;
+    background: var(--bg-dark);
+    border-radius: 16px;
+    min-width: 120px;
+}
+
+.preview-button.from {
+    border: 3px solid var(--accent-blue);
+}
+
+.preview-button.to {
+    border: 3px solid var(--accent-green);
+}
+
+.preview-symbol {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.preview-button.from .preview-symbol {
+    color: var(--accent-blue);
+}
+
+.preview-button.to .preview-symbol {
+    color: var(--accent-green);
+}
+
+.preview-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.preview-arrow {
+    width: 48px;
+    height: 48px;
+    fill: var(--text-muted);
+}
+
+/* =================================================================
+   Remap Config Grid
+   ================================================================= */
+.remap-config-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.remap-config-section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.config-section-header {
+    margin-bottom: 1rem;
+}
+
+.config-section-header h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.config-section-header p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.remap-swap-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 4rem;
+}
+
+.swap-btn {
+    width: 48px;
+    height: 48px;
+    background: var(--bg-panel);
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.swap-btn:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-elevated);
+}
+
+.swap-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--text-secondary);
+}
+
+.swap-btn:hover svg {
+    fill: var(--accent-blue);
+}
+
+/* =================================================================
+   Compact Button Grid
+   ================================================================= */
+.button-grid.compact {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+
+.button-grid.compact .button-group-label {
+    grid-column: 1 / -1;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.5rem 0 0.25rem;
+    border-top: 1px solid var(--border-color);
+    margin-top: 0.25rem;
+}
+
+.button-grid.compact .button-group-label:first-child {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.button-grid.compact .button-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.5rem 0.25rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.button-grid.compact .button-option:hover {
+    border-color: var(--border-light);
+    background: var(--bg-hover);
+}
+
+.button-grid.compact .button-option.selected {
+    border-color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.15);
+}
+
+.button-grid.compact .button-symbol {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.button-grid.compact .button-name {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.button-grid.compact .button-option.selected .button-symbol,
+.button-grid.compact .button-option.selected .button-name {
+    color: var(--accent-blue);
+}
+
+/* =================================================================
+   Remap Options
+   ================================================================= */
+.remap-options {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+/* =================================================================
+   Responsive
+   ================================================================= */
+@media (max-width: 768px) {
+    .remap-config-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .remap-swap-section {
+        padding: 0;
+    }
+    
+    .swap-btn {
+        transform: rotate(90deg);
+    }
+    
+    .remap-preview-visual {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .preview-arrow {
+        transform: rotate(90deg);
+    }
+}

@@ -1,0 +1,233 @@
+/* =================================================================
+   Main Content
+   ================================================================= */
+main {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* =================================================================
+   Section Header
+   ================================================================= */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.section-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.add-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-btn:hover {
+    border-color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.1);
+}
+
+.add-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* =================================================================
+   Profile Grid
+   ================================================================= */
+.profiles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+/* =================================================================
+   Profile Card
+   ================================================================= */
+.profile-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.profile-card:hover {
+    border-color: var(--border-light);
+    background: var(--bg-elevated);
+}
+
+.profile-card.active {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 20px var(--accent-blue-glow);
+}
+
+.profile-card.active::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--accent-blue), var(--ps-light));
+    opacity: 0.05;
+    border-radius: 12px;
+    pointer-events: none;
+}
+
+.profile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.profile-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+.profile-card.active .profile-icon {
+    background: linear-gradient(135deg, var(--accent-blue), var(--ps-light));
+    color: white;
+}
+
+.profile-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background: var(--bg-dark);
+    color: var(--text-muted);
+}
+
+.profile-badge.active {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.profile-badge.default {
+    border: 1px solid var(--border-color);
+}
+
+.profile-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.profile-description {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    line-height: 1.4;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.profile-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.profile-stat svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+/* =================================================================
+   Profile Actions
+   ================================================================= */
+.profile-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 0.375rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.profile-card:hover .profile-actions {
+    opacity: 1;
+}
+
+.profile-card:hover .profile-badge {
+    display: none;
+}
+
+.profile-action-btn {
+    width: 28px;
+    height: 28px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.profile-action-btn:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.profile-action-btn.danger:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+.profile-action-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}

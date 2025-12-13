@@ -1,0 +1,634 @@
+/* =================================================================
+   Creator View
+   ================================================================= */
+.creator-view {
+    display: flex;
+    flex-direction: column;
+}
+
+.creator-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.creator-title h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.creator-content {
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* =================================================================
+   Step Progress
+   ================================================================= */
+.creator-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 2rem;
+}
+
+.step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.step-number {
+    width: 36px;
+    height: 36px;
+    background: var(--bg-elevated);
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    transition: all 0.3s;
+}
+
+.step-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.step.active .step-number {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue);
+    color: white;
+}
+
+.step.active .step-label {
+    color: var(--accent-blue);
+}
+
+.step.completed .step-number {
+    border-color: var(--accent-green);
+    background: var(--accent-green);
+    color: white;
+}
+
+.step-connector {
+    width: 60px;
+    height: 2px;
+    background: var(--border-color);
+    margin: 0 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* =================================================================
+   Step Content
+   ================================================================= */
+.creator-step-content {
+    display: none;
+    animation: fadeIn 0.3s;
+}
+
+.creator-step-content.active {
+    display: block;
+}
+
+.step-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    text-align: center;
+}
+
+.step-description {
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+/* =================================================================
+   Macro Type Grid
+   ================================================================= */
+.macro-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.macro-type-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-panel);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.macro-type-card:hover {
+    border-color: var(--border-light);
+    background: var(--bg-elevated);
+}
+
+.macro-type-card.selected {
+    border-color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.1);
+}
+
+.type-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.type-icon svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--text-secondary);
+}
+
+.macro-type-card.selected .type-icon {
+    background: var(--accent-blue);
+}
+
+.macro-type-card.selected .type-icon svg {
+    fill: white;
+}
+
+.type-info {
+    flex: 1;
+}
+
+.type-info h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.type-info p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.type-check {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.type-check svg {
+    width: 14px;
+    height: 14px;
+    fill: white;
+    opacity: 0;
+}
+
+.macro-type-card.selected .type-check {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue);
+}
+
+.macro-type-card.selected .type-check svg {
+    opacity: 1;
+}
+
+/* =================================================================
+   Trigger Configuration
+   ================================================================= */
+.trigger-config {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 2rem;
+}
+
+.button-selector {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.selector-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+}
+
+.button-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+
+.button-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem 0.5rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.button-option:hover {
+    border-color: var(--border-light);
+    background: var(--bg-hover);
+}
+
+.button-option.selected {
+    border-color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.15);
+}
+
+.button-symbol {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.button-name {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.button-option.selected .button-symbol,
+.button-option.selected .button-name {
+    color: var(--accent-blue);
+}
+
+/* =================================================================
+   Trigger Options
+   ================================================================= */
+.trigger-options {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.activation-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mode-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mode-option:hover {
+    border-color: var(--border-light);
+}
+
+.mode-option:has(input:checked) {
+    border-color: var(--accent-blue);
+    background: rgba(0, 112, 212, 0.1);
+}
+
+.mode-option input {
+    display: none;
+}
+
+.mode-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.mode-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.mode-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.modifier-section {
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.checkbox-option input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-blue);
+}
+
+/* =================================================================
+   Action Configuration
+   ================================================================= */
+.action-config {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.config-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.config-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.config-group.inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.config-preview {
+    padding: 1rem;
+    background: var(--bg-dark);
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.preview-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-right: 0.5rem;
+}
+
+.preview-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--accent-green);
+}
+
+/* =================================================================
+   Sequence Builder
+   ================================================================= */
+.sequence-builder {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.sequence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.add-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-action-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.add-action-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+.sequence-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+}
+
+.empty-sequence {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    background: var(--bg-dark);
+    border-radius: 8px;
+}
+
+.sequence-step {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: var(--bg-elevated);
+    border-radius: 6px;
+}
+
+.step-num {
+    width: 24px;
+    height: 24px;
+    background: var(--bg-dark);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.step-spacer {
+    flex: 1;
+}
+
+.step-duration {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.step-duration span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.sequence-options {
+    display: flex;
+    gap: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* =================================================================
+   Details Form
+   ================================================================= */
+.details-form {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.checkbox-option.prominent {
+    padding: 1rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.checkbox-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.checkbox-title {
+    font-weight: 600;
+}
+
+.checkbox-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* =================================================================
+   Macro Summary
+   ================================================================= */
+.macro-summary {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.macro-summary h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.summary-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.summary-value {
+    font-weight: 600;
+}
+
+/* =================================================================
+   Creator Navigation
+   ================================================================= */
+.creator-nav {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover {
+    border-color: var(--border-light);
+}
+
+.nav-btn.primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+.nav-btn.primary:hover {
+    background: #0080f0;
+}
+
+.nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}

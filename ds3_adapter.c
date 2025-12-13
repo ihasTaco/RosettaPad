@@ -20,20 +20,76 @@ static int hidraw_fd = -1;
 static volatile int running = 1;
 static volatile int usb_enabled = 0;
 
-// DS3 input report
+// Enable motion debug output (set to 0 to disable)
+#define MOTION_DEBUG 1
+
+// Credit to eleccelerator.com for helping figure out most of this.
+// DS3 HID Report
+// Original | Description
+// 01 | Byte 0: Report ID (0x01)
+// 00 | Byte 1: Reserved (0x00)
+// 
+// 00 | Byte 2: Released (0x00), Select (0x01), L3 (0x02), R3 (0x04), Start (0x08), D Up (0x10), D Right (0x20), D Down (0x40), D Left (0x80)
+// 00 | Byte 3: Released (0x00), L2 (0x01), R2 (0x02), L1 (0x04), R1 (0x08), Triangle (0x10), Circle (0x20), Cross (0x40), Square (0x80)
+// 00 | Byte 4: Released (0x00), PS (0x01)
+// 00 | Byte 5: ????
+// 
+// 7e | Byte 6: Left analog stick X axis (0x00 - 0xFF)
+// 7e | Byte 7: Left analog stick Y axis (0x00 - 0xFF)
+// 
+// 7d | Byte 8: Right analog stick X axis (0x00 - 0xFF)
+// 7f | Byte 9: Right analog stick Y axis (0x00 - 0xFF)
+// 
+// 00 00 00 | Byte 10 - 12: ????
+// 
+// # Pressure Controls (0x00 is released, 0xFF is fully pressed)
+// 00 | Byte 13: D Up Pressure         (0x00 - 0xFF)
+// 00 | Byte 14: D Right Pressure      (0x00 - 0xFF)
+// 00 | Byte 15: D Down Pressure       (0x00 - 0xFF)
+// 00 | Byte 16: D Left Pressure       (0x00 - 0xFF)
+// 00 | Byte 17: L2 Pressure           (0x00 - 0xFF)
+// 00 | Byte 18: R2 Pressure           (0x00 - 0xFF)
+// 00 | Byte 19: L1 Pressure           (0x00 - 0xFF)
+// 00 | Byte 20: R1 Pressure           (0x00 - 0xFF)
+// 00 | Byte 21: Triangle Pressure     (0x00 - 0xFF)
+// 00 | Byte 22: Circle Pressure       (0x00 - 0xFF)
+// 00 | Byte 23: Cross Pressure        (0x00 - 0xFF)
+// 00 | Byte 24: Square Pressure       (0x00 - 0xFF)
+// 
+// 00 00 00 00 03 ef 16 00 00 00 00 33 04 77 01 | Byte 25 - 39: ????
+// 
+// c0 02 | Byte 40 - 41: Accelerometer X Axis, LE 10bit unsigned
+// 0f 02 | Byte 42 - 43: Accelerometer Y Axis, LE 10bit unsigned
+// 00 01 | Byte 44 - 45: Accelerometer Z Axis, LE 10bit unsigned
+// 8d 00 | Byte 46 - 47: Gyroscope, LE 10bit unsigned
+// 
+// 02 | Byte 48: ????
+
+// DS3 input report (49 bytes)
+// Motion data at bytes 40-47, LITTLE-ENDIAN (low byte first):
+//  40: Accel X low, 41: Accel X high
+//  42: Accel Y low, 43: Accel Y high  
+//  44: Accel Z low, 45: Accel Z high
+//  46: Gyro Z low,  47: Gyro Z high
+// Values are 10-bit unsigned (0-1023), centered at ~512
+// Gravity shows as offset from 512 on the axis pointing up/down
 static uint8_t ds3_report[49] = {
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x80,
-    0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xee, 0x12,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x80,     // 0-7
+    0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     // 8-15
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     // 16-23
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x12,     // 24-31
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x04, 0x77, 0x01,     // 32-39
+    0x00, 0x02,                                         // 40: Accel X low, 41: Accel X high
+    0x00, 0x02,                                         // 42: Accel Y low, 43: Accel Y high  
+    0x00, 0x02,                                         // 44: Accel Z low, 45: Accel Z high
+    0x8d, 0x00,                                         // 46: Gyro Z low,  47: Gyro Z high
+    0x02
 };
 static pthread_mutex_t report_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Rumble state - protected by rumble_mutex
-static uint8_t rumble_right = 0;  // Small motor (high frequency)
-static uint8_t rumble_left = 0;   // Large motor (low frequency)
+// Rumble state
+static uint8_t rumble_right = 0;
+static uint8_t rumble_left = 0;
 static pthread_mutex_t rumble_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // DS3 Feature reports
@@ -106,13 +162,12 @@ static const struct {
     .lang0 = { .code = 0x0409, .str1 = "DS3 Input" },
 };
 
-// Calculate CRC32 for DualSense BT output reports
+// CRC32 for DualSense BT
 static uint32_t crc32_table[256];
 static int crc32_initialized = 0;
 
 void init_crc32_table(void) {
     if (crc32_initialized) return;
-    
     for (uint32_t i = 0; i < 256; i++) {
         uint32_t crc = i;
         for (int j = 0; j < 8; j++) {
@@ -131,61 +186,31 @@ uint32_t calc_crc32(const uint8_t *data, size_t len) {
     return ~crc;
 }
 
-// Send rumble command to DualSense via Bluetooth
-// DualSense BT output report format (Report ID 0x31):
-// The report structure is different from USB - BT has additional header bytes
 void send_dualsense_rumble(int fd, uint8_t right_motor, uint8_t left_motor) {
     static uint8_t seq = 0;
-    
-    // Full 78-byte BT output report
     uint8_t report[78] = {0};
     
-    // BT Output report structure:
-    // [0] = 0x31 (report ID for BT)
-    // [1] = seq counter (upper 4 bits), lower 4 bits = tag (0x0 for output)
-    // [2] = 0x10 (tag type: output report)
+    report[0] = 0x31;
+    report[1] = (seq << 4) | 0x00;
+    seq = (seq + 1) & 0x0F;
+    report[2] = 0x10;
+    report[3] = 0x03;
+    report[4] = 0x00;
+    report[5] = right_motor;
+    report[6] = left_motor;
     
-    // After BT header, the common output report starts:
-    // [3] = valid_flag0: 0x01=rumble, 0x02=triggers, 0x04=audio
-    // [4] = valid_flag1: 0x01=mic LED, 0x02=audio, 0x04=LED, 0x08=player LEDs, 0x10=unknown
-    // [5] = rumble right motor (high freq)
-    // [6] = rumble left motor (low freq)
-    // ... rest of report
-    
-    report[0] = 0x31;                    // Report ID
-    report[1] = (seq << 4) | 0x00;       // Sequence in upper nibble
-    seq = (seq + 1) & 0x0F;              // Increment and wrap at 16
-    report[2] = 0x10;                    // Tag type
-    
-    // Valid flags - tell DualSense what we're setting
-    report[3] = 0x03;                    // 0x01=motor rumble, 0x02=haptic triggers 
-    report[4] = 0x00;                    // No LED/mic changes
-    
-    // Motor values
-    report[5] = right_motor;             // Right motor (high freq)
-    report[6] = left_motor;              // Left motor (low freq)
-    
-    // Everything else stays 0
-    
-    // Calculate CRC32 for BT mode
-    // CRC is calculated over: seed (0xA2) + entire report except last 4 bytes
     uint8_t crc_buf[75];
-    crc_buf[0] = 0xA2;  // BT output report seed
+    crc_buf[0] = 0xA2;
     memcpy(&crc_buf[1], report, 74);
-    
     uint32_t crc = calc_crc32(crc_buf, 75);
     report[74] = (crc >> 0) & 0xFF;
     report[75] = (crc >> 8) & 0xFF;
     report[76] = (crc >> 16) & 0xFF;
     report[77] = (crc >> 24) & 0xFF;
     
-    // Send to DualSense
-    if (fd >= 0) {
-        write(fd, report, sizeof(report));
-    }
+    if (fd >= 0) write(fd, report, sizeof(report));
 }
 
-// Find DualSense hidraw device
 int find_dualsense_hidraw(void) {
     DIR *dir = opendir("/dev");
     if (!dir) return -1;
@@ -206,7 +231,6 @@ int find_dualsense_hidraw(void) {
             continue;
         }
         
-        // Sony DualSense: VID 0x054c, PID 0x0ce6
         if (info.vendor == 0x054c && info.product == 0x0ce6) {
             char name[256] = "";
             ioctl(fd, HIDIOCGRAWNAME(sizeof(name)), name);
@@ -220,24 +244,61 @@ int find_dualsense_hidraw(void) {
     return -1;
 }
 
-// Convert DualSense D-pad to DS3 format
 uint8_t convert_dpad(uint8_t ds_dpad) {
-    // DualSense: 0=Up, 1=UpRight, 2=Right, 3=DownRight, 4=Down, 5=DownLeft, 6=Left, 7=UpLeft, 8=neutral
-    // DS3 byte 2: Up=0x10, Right=0x20, Down=0x40, Left=0x80
     switch (ds_dpad & 0x0F) {
-        case 0: return 0x10;                 // Up
-        case 1: return 0x10 | 0x20;          // Up-Right
-        case 2: return 0x20;                 // Right
-        case 3: return 0x40 | 0x20;          // Down-Right
-        case 4: return 0x40;                 // Down
-        case 5: return 0x40 | 0x80;          // Down-Left
-        case 6: return 0x80;                 // Left
-        case 7: return 0x10 | 0x80;          // Up-Left
-        default: return 0;                   // Neutral
+        case 0: return 0x10;
+        case 1: return 0x10 | 0x20;
+        case 2: return 0x20;
+        case 3: return 0x40 | 0x20;
+        case 4: return 0x40;
+        case 5: return 0x40 | 0x80;
+        case 6: return 0x80;
+        case 7: return 0x10 | 0x80;
+        default: return 0;
     }
 }
 
-// DualSense input thread
+// Convert DualSense accelerometer to DS3 format
+// DualSense: signed 16-bit, ~8192 per 1g (can be negative)
+// DS3: unsigned 10-bit (0-1023), centered at 512, ~113 per 1g
+//
+// When controller is flat face-up:
+// - DualSense: Y axis shows ~8192 (gravity pointing down)
+// - DS3: Y axis should show ~512 + 113 ≈ 625
+uint16_t convert_accel(int16_t value) {
+    // DualSense: ±8192 per g
+    // DS3: ~113 per g, centered at 512
+    // Scale factor: 8192 / 113 ≈ 72.5
+    
+    int32_t scaled = value / 72;  // Convert to DS3 scale
+    scaled += 512;                 // Center at 512
+    
+    // Clamp to 10-bit range (0-1023)
+    if (scaled < 0) scaled = 0;
+    if (scaled > 1023) scaled = 1023;
+    
+    return (uint16_t)scaled;
+}
+
+// Convert DualSense gyroscope to DS3 format
+// DualSense: signed 16-bit, high resolution (~1024 per deg/s?)
+// DS3: 16-bit little-endian, centered at ~0x02C0 (704) based on real captures
+//
+// At rest, DS3 gyro shows: c0 02 (little-endian) = 0x02C0 = 704
+uint16_t convert_gyro(int16_t value) {
+    // DualSense gyro is high resolution
+    // Scale down significantly and center at 0x02C0 (704)
+    
+    int32_t scaled = value / 64;  // Reduce sensitivity
+    scaled += 0x02C0;              // Center at 704 (from real DS3 captures)
+    
+    // Clamp to reasonable range
+    if (scaled < 0) scaled = 0;
+    if (scaled > 0xFFFF) scaled = 0xFFFF;
+    
+    return (uint16_t)scaled;
+}
+
 void* dualsense_thread(void* arg) {
     printf("Waiting for DualSense...\n");
     
@@ -249,7 +310,8 @@ void* dualsense_thread(void* arg) {
     if (hidraw_fd < 0) return NULL;
     printf("DualSense connected!\n");
     
-    uint8_t buf[78];  // DualSense BT report is ~78 bytes
+    uint8_t buf[78];
+    int debug_counter = 0;
     
     while (running) {
         ssize_t n = read(hidraw_fd, buf, sizeof(buf));
@@ -269,25 +331,13 @@ void* dualsense_thread(void* arg) {
             continue;
         }
         
-        // DualSense Bluetooth report format (report ID 0x31):
-        // [0] = 0x31 report ID
-        // [1] = counter
-        // [2] = Left stick X
-        // [3] = Left stick Y
-        // [4] = Right stick X
-        // [5] = Right stick Y
-        // [6] = L2 trigger
-        // [7] = R2 trigger
-        // [8] = counter/status
-        // [9] = D-pad (low nibble) + face buttons (high nibble)
-        //       D-pad: 0=Up, 2=Right, 4=Down, 6=Left, 8=neutral
-        //       Face: 0x10=Square, 0x20=Cross, 0x40=Circle, 0x80=Triangle
-        // [10] = L1/R1/L2btn/R2btn (low nibble) + Create/Options/L3/R3 (high nibble)
-        //       0x01=L1, 0x02=R1, 0x04=L2btn, 0x08=R2btn
-        //       0x10=Create, 0x20=Options, 0x40=L3, 0x80=R3
-        // [11] = PS button (0x01), Touchpad (0x02), Mute (0x04)
+        // DualSense BT report (0x31):
+        // [0]=0x31, [1]=counter, [2-5]=sticks, [6-7]=triggers
+        // [8]=counter, [9]=dpad+face, [10]=shoulders, [11]=PS/touch
+        // [16-21]=Gyro X,Y,Z (signed 16-bit LE)
+        // [22-27]=Accel X,Y,Z (signed 16-bit LE)
         
-        if (buf[0] != 0x31) continue;  // Only process BT input reports
+        if (buf[0] != 0x31) continue;
         
         uint8_t lx = buf[2];
         uint8_t ly = buf[3];
@@ -295,49 +345,76 @@ void* dualsense_thread(void* arg) {
         uint8_t ry = buf[5];
         uint8_t l2 = buf[6];
         uint8_t r2 = buf[7];
-        uint8_t buttons1 = buf[9];  // dpad + face
-        uint8_t buttons2 = buf[10]; // shoulders + sticks
-        uint8_t buttons3 = buf[11]; // PS + touchpad
+        uint8_t buttons1 = buf[9];
+        uint8_t buttons2 = buf[10];
+        uint8_t buttons3 = buf[11];
         
-        // Build DS3 report
-        // DS3 byte 2: Select(0x01), L3(0x02), R3(0x04), Start(0x08), DPad
-        // DS3 byte 3: L2(0x01), R2(0x02), L1(0x04), R1(0x08), Tri(0x10), Circle(0x20), Cross(0x40), Square(0x80)
-        // DS3 byte 4: PS(0x01)
+        // Motion data from DualSense BT report 0x31 (signed 16-bit little-endian)
+        // BT report has extra header byte, so offsets are +1 from USB
+        // Gyro: bytes 17-22, Accel: bytes 23-28
+        int16_t gyro_x = (int16_t)(buf[17] | (buf[18] << 8));
+        int16_t gyro_y = (int16_t)(buf[19] | (buf[20] << 8));
+        int16_t gyro_z = (int16_t)(buf[21] | (buf[22] << 8));
+        int16_t accel_x = (int16_t)(buf[23] | (buf[24] << 8));
+        int16_t accel_y = (int16_t)(buf[25] | (buf[26] << 8));
+        int16_t accel_z = (int16_t)(buf[27] | (buf[28] << 8));
         
-        uint8_t ds3_btn1 = 0;  // byte 2
-        uint8_t ds3_btn2 = 0;  // byte 3
-        uint8_t ds3_ps = 0;    // byte 4
+        // Convert to DS3 format (10-bit, 0-1023, centered at 512 for accel)
+        uint16_t ds3_accel_x = convert_accel(accel_x);
+        uint16_t ds3_accel_y = convert_accel(accel_y);
+        uint16_t ds3_accel_z = convert_accel(accel_z);
+        // DS3 has one gyro axis at bytes 46-47
+        uint16_t ds3_gyro = convert_gyro(gyro_z);    // Gyro Z -> bytes 46-47
         
-        // D-pad
+#if MOTION_DEBUG
+        debug_counter++;
+        if (debug_counter >= 250) {  // ~1 second at 250Hz
+            printf("\n[Motion Debug] Report size: %zd\n", n);
+            printf("  Raw bytes 0-31: ");
+            for (int i = 0; i < 32 && i < n; i++) printf("%02X ", buf[i]);
+            printf("\n");
+            printf("  DualSense raw: Accel(%6d, %6d, %6d) Gyro(%6d, %6d, %6d)\n",
+                   accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z);
+            printf("  DS3 converted: Accel(%4d, %4d, %4d) Gyro(%4d)\n",
+                   ds3_accel_x, ds3_accel_y, ds3_accel_z, ds3_gyro);
+            
+            // Show the actual bytes at motion positions in DS3 report
+            pthread_mutex_lock(&report_mutex);
+            printf("  DS3 bytes 40-47: %02X %02X %02X %02X | %02X %02X %02X %02X\n",
+                   ds3_report[40], ds3_report[41], ds3_report[42], ds3_report[43],
+                   ds3_report[44], ds3_report[45], ds3_report[46], ds3_report[47]);
+            pthread_mutex_unlock(&report_mutex);
+            
+            debug_counter = 0;
+        }
+#endif
+        
+        // Build buttons
+        uint8_t ds3_btn1 = 0;
+        uint8_t ds3_btn2 = 0;
+        uint8_t ds3_ps = 0;
+        
         ds3_btn1 |= convert_dpad(buttons1);
         
-        // Face buttons (high nibble of buttons1)
         if (buttons1 & 0x10) ds3_btn2 |= 0x80;  // Square
         if (buttons1 & 0x20) ds3_btn2 |= 0x40;  // Cross
         if (buttons1 & 0x40) ds3_btn2 |= 0x20;  // Circle
         if (buttons1 & 0x80) ds3_btn2 |= 0x10;  // Triangle
         
-        // Shoulders
         if (buttons2 & 0x01) ds3_btn2 |= 0x04;  // L1
         if (buttons2 & 0x02) ds3_btn2 |= 0x08;  // R1
-        if (buttons2 & 0x04) ds3_btn2 |= 0x01;  // L2 button
-        if (buttons2 & 0x08) ds3_btn2 |= 0x02;  // R2 button
+        if (buttons2 & 0x04) ds3_btn2 |= 0x01;  // L2
+        if (buttons2 & 0x08) ds3_btn2 |= 0x02;  // R2
         
-        // Sticks
         if (buttons2 & 0x40) ds3_btn1 |= 0x02;  // L3
         if (buttons2 & 0x80) ds3_btn1 |= 0x04;  // R3
         
-        // Start/Select
         if (buttons2 & 0x10) ds3_btn1 |= 0x01;  // Create -> Select
         if (buttons2 & 0x20) ds3_btn1 |= 0x08;  // Options -> Start
         
-        // PS button
-        if (buttons3 & 0x01) ds3_ps = 0x01;
+        if (buttons3 & 0x01) ds3_ps = 0x01;     // PS button
+        if (buttons3 & 0x02) ds3_btn1 |= 0x01;  // Touchpad -> Select
         
-        // Touchpad -> Select (alternative)
-        if (buttons3 & 0x02) ds3_btn1 |= 0x01;
-        
-        // Update DS3 report
         pthread_mutex_lock(&report_mutex);
         ds3_report[2] = ds3_btn1;
         ds3_report[3] = ds3_btn2;
@@ -346,51 +423,63 @@ void* dualsense_thread(void* arg) {
         ds3_report[7] = ly;
         ds3_report[8] = rx;
         ds3_report[9] = ry;
-        ds3_report[18] = l2;  // L2 pressure
-        ds3_report[19] = r2;  // R2 pressure
+        ds3_report[18] = l2;
+        ds3_report[19] = r2;
+        
         // Face button pressures
         ds3_report[22] = (buttons1 & 0x80) ? 0xff : 0;  // Triangle
         ds3_report[23] = (buttons1 & 0x40) ? 0xff : 0;  // Circle
         ds3_report[24] = (buttons1 & 0x20) ? 0xff : 0;  // Cross
         ds3_report[25] = (buttons1 & 0x10) ? 0xff : 0;  // Square
+        
+        // Motion data - DS3 format based on real controller captures:
+        // Accel: bytes 40-45 (three axis, 10-bit little-endian)
+        // Gyro: bytes 46-47 (one axis, 10-bit little-endian)
+
+        // Accel X at bytes 40-41
+        ds3_report[40] = ds3_accel_x & 0xFF;
+        ds3_report[41] = (ds3_accel_x >> 8) & 0xFF;
+
+        // Accel Y at bytes 42-43
+        ds3_report[42] = ds3_accel_y & 0xFF;
+        ds3_report[43] = (ds3_accel_y >> 8) & 0xFF;
+
+        // Accel Z at bytes 44-45
+        ds3_report[44] = ds3_accel_z & 0xFF;
+        ds3_report[45] = (ds3_accel_z >> 8) & 0xFF;
+
+        // Gyro at bytes 46-47
+        ds3_report[46] = ds3_gyro & 0xFF;
+        ds3_report[47] = (ds3_gyro >> 8) & 0xFF;
+        
         pthread_mutex_unlock(&report_mutex);
     }
     
     return NULL;
 }
 
-// Rumble output thread - sends rumble commands to DualSense
 void* rumble_thread(void* arg) {
-    uint8_t last_right = 0;
-    uint8_t last_left = 0;
+    uint8_t last_right = 0, last_left = 0;
     
     while (running) {
         uint8_t right, left;
-        
         pthread_mutex_lock(&rumble_mutex);
         right = rumble_right;
         left = rumble_left;
         pthread_mutex_unlock(&rumble_mutex);
         
-        // Only send if changed or periodically to maintain rumble
         if (hidraw_fd >= 0 && (right != last_right || left != last_left || right > 0 || left > 0)) {
             send_dualsense_rumble(hidraw_fd, right, left);
             last_right = right;
             last_left = left;
         }
-        
-        usleep(10000);  // 100Hz update rate for rumble
+        usleep(10000);
     }
     
-    // Stop rumble on exit
-    if (hidraw_fd >= 0) {
-        send_dualsense_rumble(hidraw_fd, 0, 0);
-    }
-    
+    if (hidraw_fd >= 0) send_dualsense_rumble(hidraw_fd, 0, 0);
     return NULL;
 }
 
-// USB input thread
 void* usb_input_thread(void* arg) {
     ep1_fd = open("/dev/ffs-ds3/ep1", O_RDWR);
     if (ep1_fd < 0) { perror("open ep1"); return NULL; }
@@ -408,18 +497,6 @@ void* usb_input_thread(void* arg) {
     return NULL;
 }
 
-// USB output thread - receives rumble/LED commands from PS3
-// DS3 Output Report format (varies by report type):
-// Report 0x01 (main output):
-//   [0] = 0x01 (report ID) - Note: may not be present depending on how PS3 sends it
-//   [1] = 0x00 (reserved)
-//   [2] = right motor duration (0x00-0xFF, 0xFF = infinite)
-//   [3] = right motor power (0x00 = off, 0x01 = on) - small/high freq motor
-//   [4] = left motor duration (0x00-0xFF, 0xFF = infinite)
-//   [5] = left motor power (0x00-0xFF) - large/low freq motor, analog
-//   [6-9] = reserved
-//   [10] = LED bitmap (0x01=LED1, 0x02=LED2, 0x04=LED3, 0x08=LED4, 0x10=LED5)
-//   ... more LED config follows
 void* usb_output_thread(void* arg) {
     ep2_fd = open("/dev/ffs-ds3/ep2", O_RDWR);
     if (ep2_fd < 0) { perror("open ep2"); return NULL; }
@@ -428,49 +505,23 @@ void* usb_output_thread(void* arg) {
     while (running) {
         ssize_t n = read(ep2_fd, buf, sizeof(buf));
         if (n <= 0) {
-            if (errno == EAGAIN) {
-                usleep(1000);
-                continue;
-            }
+            if (errno == EAGAIN) { usleep(1000); continue; }
             continue;
         }
         
-        // Parse DS3 output report for rumble data
-        // The PS3 sends rumble via the interrupt OUT endpoint
-        // Format depends on what the PS3 sends - typically starts at offset 1 or 2
-        
-        // DS3 rumble bytes:
-        // Small motor (right): byte 3 - just on/off (0 or 1), converts to 0 or 255
-        // Large motor (left): byte 5 - analog 0-255
-        
         if (n >= 6) {
-            // DS3 Output Report format (49 bytes, with report ID = 0x01):
-            // Byte 0: 0x01 (report ID)
-            // Byte 1: 0x00 (reserved/padding)
-            // Byte 2: right motor duration (0xFE = infinite, 0x00 = off)
-            // Byte 3: right motor power (0x00 = off, 0x01 = on) - binary!
-            // Byte 4: left motor duration (0xFE = infinite, 0x00 = off)
-            // Byte 5: left motor power (0x00-0xFF) - analog!
-            // Byte 6+: LED configuration
+            uint8_t right_power = buf[3];
+            uint8_t left_power = buf[5];
             
-            uint8_t right_power = buf[3];    // 0 or 1
-            uint8_t left_power = buf[5];     // 0-255
-            
-            // Convert to DualSense format
-            uint8_t ds_right = right_power ? 0xFF : 0x00;
-            uint8_t ds_left = left_power;
-            
-            // Update rumble state
             pthread_mutex_lock(&rumble_mutex);
-            rumble_right = ds_right;
-            rumble_left = ds_left;
+            rumble_right = right_power ? 0xFF : 0x00;
+            rumble_left = left_power;
             pthread_mutex_unlock(&rumble_mutex);
         }
     }
     return NULL;
 }
 
-// USB control thread
 void* usb_control_thread(void* arg) {
     while (running) {
         struct usb_functionfs_event event;
@@ -485,9 +536,9 @@ void* usb_control_thread(void* arg) {
             uint16_t wLength = event.u.setup.wLength;
             uint8_t report_id = wValue & 0xFF;
             
-            if (bRequest == 0x0A) {  // SET_IDLE
+            if (bRequest == 0x0A) {
                 read(ep0_fd, NULL, 0);
-            } else if (bRequest == 0x01) {  // GET_REPORT
+            } else if (bRequest == 0x01) {
                 uint8_t *data = NULL;
                 switch (report_id) {
                     case 0x01: data = report_01; break;
@@ -499,19 +550,15 @@ void* usb_control_thread(void* arg) {
                 }
                 if (data) write(ep0_fd, data, 64 < wLength ? 64 : wLength);
                 else read(ep0_fd, NULL, 0);
-            } else if (bRequest == 0x09) {  // SET_REPORT
+            } else if (bRequest == 0x09) {
                 uint8_t buf[64];
                 ssize_t r = 0;
-                if (wLength > 0) {
-                    r = read(ep0_fd, buf, wLength < 64 ? wLength : 64);
-                }
-                
+                if (wLength > 0) r = read(ep0_fd, buf, wLength < 64 ? wLength : 64);
                 if (r > 0 && report_id == 0xEF) {
                     report_ef[0] = 0xef;
                     memcpy(&report_ef[1], buf, r < 63 ? r : 63);
                 }
-                
-                write(ep0_fd, NULL, 0);  // ACK
+                write(ep0_fd, NULL, 0);
             } else {
                 read(ep0_fd, NULL, 0);
             }
@@ -521,7 +568,6 @@ void* usb_control_thread(void* arg) {
         } else if (event.type == FUNCTIONFS_DISABLE) {
             printf("PS3 disconnected\n");
             usb_enabled = 0;
-            // Stop rumble when PS3 disconnects
             pthread_mutex_lock(&rumble_mutex);
             rumble_right = 0;
             rumble_left = 0;
@@ -564,11 +610,9 @@ int setup_usb_gadget(void) {
 int main(void) {
     pthread_t ds_tid, usb_in_tid, usb_out_tid, usb_ctrl_tid, rumble_tid;
     
-    printf("=== DualSense to PS3 Adapter ===\n\n");
+    printf("=== DualSense to PS3 Adapter (with SIXAXIS) ===\n\n");
     
-    // Initialize CRC32 table for DualSense BT output
     init_crc32_table();
-    
     setup_usb_gadget();
     
     ep0_fd = open("/dev/ffs-ds3/ep0", O_RDWR);
@@ -588,12 +632,11 @@ int main(void) {
     printf("Binding to USB...\n");
     system("echo '3f980000.usb' > /sys/kernel/config/usb_gadget/ds3/UDC");
     
-    printf("\nAdapter running! Press Ctrl+C to stop.\n\n");
+    printf("\nAdapter running! Press Ctrl+C to stop.\n");
+    printf("Motion debug output enabled - watch for [Motion Debug] lines.\n\n");
     
     while (running) {
         sleep(1);
-        
-        // Get current rumble state for status display
         uint8_t r_right, r_left;
         pthread_mutex_lock(&rumble_mutex);
         r_right = rumble_right;
@@ -608,12 +651,7 @@ int main(void) {
     }
     
     printf("\nShutting down...\n");
-    
-    // Stop rumble before shutdown
-    if (hidraw_fd >= 0) {
-        send_dualsense_rumble(hidraw_fd, 0, 0);
-    }
-    
+    if (hidraw_fd >= 0) send_dualsense_rumble(hidraw_fd, 0, 0);
     system("echo '' > /sys/kernel/config/usb_gadget/ds3/UDC");
     
     if (ep1_fd >= 0) close(ep1_fd);

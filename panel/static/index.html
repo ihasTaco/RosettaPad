@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RosettaPad</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./static/css/base.css">
+    <link rel="stylesheet" href="./static/css/header.css">
+    <link rel="stylesheet" href="./static/css/profiles.css">
+    <link rel="stylesheet" href="./static/css/editor.css">
+    <link rel="stylesheet" href="./static/css/macros.css">
+    <link rel="stylesheet" href="./static/css/creator.css">
+    <link rel="stylesheet" href="./static/css/remaps.css">
+    <link rel="stylesheet" href="./static/css/forms.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">RP</div>
+            <div>
+                <div class="logo-text">RosettaPad</div>
+                <div class="logo-subtitle">Controller Adapter</div>
+            </div>
+        </div>
+        
+        <div class="controller-area" id="controllerArea">
+            <button class="pair-btn" id="pairBtn" onclick="toggleMenu()">
+                <svg class="pair-btn-icon" viewBox="0 0 24 24">
+                    <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+                </svg>
+                <span>Pair Controller</span>
+            </button>
+            
+            <div class="connection-status" id="connectionStatus" onclick="toggleMenu()" style="display: none;">
+                <div class="status-indicator"></div>
+                <div class="status-info">
+                    <div class="status-name" id="statusName">DualSense</div>
+                    <div class="status-latency"><span id="statusLatency">8.2</span>ms</div>
+                </div>
+                <svg class="status-chevron" viewBox="0 0 24 24">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+            </div>
+            
+            <div class="controller-menu" id="controllerMenu">
+                <div class="menu-section" id="connectedSection" style="display: none;">
+                    <div class="menu-section-title">Connected</div>
+                    <div class="connected-controller">
+                        <div class="controller-icon">
+                            <svg viewBox="0 0 24 24"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
+                        </div>
+                        <div class="controller-details">
+                            <div class="controller-name" id="connectedName">DualSense</div>
+                            <div class="controller-meta">
+                                <span>Latency: <span class="latency-value" id="connectedLatency">8.2ms</span></span>
+                            </div>
+                        </div>
+                        <div class="controller-actions">
+                            <button class="icon-btn" onclick="openRenameModal()" title="Rename">
+                                <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                            </button>
+                            <button class="icon-btn danger" onclick="disconnectCurrent()" title="Disconnect">
+                                <svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="menu-section" id="trustedSection">
+                    <div class="menu-section-title">Trusted Controllers</div>
+                    <div class="trusted-list" id="trustedList">
+                        <div class="empty-state">No trusted controllers</div>
+                    </div>
+                </div>
+                
+                <div class="menu-section">
+                    <div class="scan-section">
+                        <div class="menu-section-title" style="margin-bottom: 0;">Pair New Device</div>
+                        <button class="scan-btn" id="scanBtn" onclick="toggleScan()">
+                            <svg viewBox="0 0 24 24"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
+                            <span id="scanBtnText">Scan</span>
+                        </button>
+                    </div>
+                    <div class="discovered-list" id="discoveredList" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Main View: Profiles List -->
+        <div id="mainView">
+            <section class="profiles-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Profiles</h2>
+                        <p class="section-subtitle">Switch between different controller configurations</p>
+                    </div>
+                    <button class="add-btn" onclick="openCreateProfileModal()">
+                        <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                        <span>New Profile</span>
+                    </button>
+                </div>
+                <div class="profiles-grid" id="profilesGrid"></div>
+            </section>
+        </div>
+
+        <!-- Profile Editor View -->
+        <div id="profileEditorView" class="editor-view" style="display: none;">
+            <div class="editor-header">
+                <button class="back-btn" onclick="closeProfileEditor()">
+                    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                    <span>Back to Profiles</span>
+                </button>
+                <div class="editor-title">
+                    <h2 id="editorProfileName">Edit Profile</h2>
+                    <span class="editor-subtitle" id="editorProfileId"></span>
+                </div>
+                <button class="save-btn" onclick="saveProfileChanges()">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    <span>Save Changes</span>
+                </button>
+            </div>
+
+            <div class="editor-content">
+                <aside class="editor-sidebar">
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-title">Profile Details</h3>
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-input" id="editorNameInput" placeholder="Profile name">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-textarea" id="editorDescInput" placeholder="Describe this profile..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-title">Configuration</h3>
+                        <nav class="sidebar-nav">
+                            <button class="sidebar-nav-item active" data-section="macros" onclick="switchEditorSection('macros')">
+                                <svg viewBox="0 0 24 24"><path d="M17 4h3v16h-3V4zM5 14h3v6H5v-6zm6-5h3v11h-3V9z"/></svg>
+                                <span>Macros</span>
+                                <span class="nav-count" id="macroNavCount">0</span>
+                            </button>
+                            <button class="sidebar-nav-item" data-section="remaps" onclick="switchEditorSection('remaps')">
+                                <svg viewBox="0 0 24 24"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></svg>
+                                <span>Button Remaps</span>
+                                <span class="nav-count" id="remapNavCount">0</span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-section danger-zone" id="dangerZone">
+                        <h3 class="sidebar-title">Danger Zone</h3>
+                        <button class="danger-btn" onclick="openDeleteProfileModal(editingProfileId)">
+                            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                            <span>Delete Profile</span>
+                        </button>
+                    </div>
+                </aside>
+
+                <div class="editor-main">
+                    <!-- Macros Section -->
+                    <section class="editor-section active" id="section-macros">
+                        <div class="section-toolbar">
+                            <div class="toolbar-left">
+                                <h3 class="toolbar-title">Macros</h3>
+                                <span class="toolbar-count" id="macroCount">0 macros</span>
+                            </div>
+                            <div class="toolbar-right">
+                                <button class="toolbar-btn" onclick="openGlobalMacroSelector()">
+                                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                                    <span>Add Global</span>
+                                </button>
+                                <button class="toolbar-btn primary" onclick="openMacroCreator()">
+                                    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                                    <span>Create Macro</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="macros-container" id="macrosContainer"></div>
+                    </section>
+
+                    <!-- Remaps Section -->
+                    <section class="editor-section" id="section-remaps">
+                        <div class="section-toolbar">
+                            <div class="toolbar-left">
+                                <h3 class="toolbar-title">Button Remaps</h3>
+                                <span class="toolbar-count" id="remapCount">0 remaps</span>
+                            </div>
+                            <div class="toolbar-right">
+                                <button class="toolbar-btn primary" onclick="openRemapCreator()">
+                                    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                                    <span>Add Remap</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="remaps-container" id="remapsContainer">
+                            <div class="empty-state-large">
+                                <svg viewBox="0 0 24 24"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></svg>
+                                <h4>No Button Remaps</h4>
+                                <p>Remap controller buttons to different functions.</p>
+                                <button class="empty-btn primary" onclick="openRemapCreator()">Add Remap</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <!-- Macro Creator View -->
+        <div id="macroCreatorView" class="creator-view" style="display: none;">
+            <div class="creator-header">
+                <button class="back-btn" onclick="closeMacroCreator()">
+                    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                    <span>Cancel</span>
+                </button>
+                <div class="creator-title">
+                    <h2 id="macroCreatorTitle">Create Macro</h2>
+                </div>
+                <button class="save-btn" id="saveMacroBtn" onclick="saveMacro()" style="visibility: hidden;">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    <span>Save Macro</span>
+                </button>
+            </div>
+
+            <div class="creator-content">
+                <div class="creator-steps">
+                    <div class="step active" data-step="1"><div class="step-number">1</div><div class="step-label">Type</div></div>
+                    <div class="step-connector"></div>
+                    <div class="step" data-step="2"><div class="step-number">2</div><div class="step-label">Trigger</div></div>
+                    <div class="step-connector"></div>
+                    <div class="step" data-step="3"><div class="step-number">3</div><div class="step-label">Action</div></div>
+                    <div class="step-connector"></div>
+                    <div class="step" data-step="4"><div class="step-number">4</div><div class="step-label">Details</div></div>
+                </div>
+
+                <!-- Step 1: Type -->
+                <div class="creator-step-content active" id="step-1">
+                    <h3 class="step-title">What type of macro do you want to create?</h3>
+                    <p class="step-description">Choose how this macro will behave when triggered.</p>
+                    
+                    <div class="macro-type-grid">
+                        <button class="macro-type-card" data-type="rapid_fire" onclick="selectMacroType('rapid_fire')">
+                            <div class="type-icon"><svg viewBox="0 0 24 24"><path d="M17 4h3v16h-3V4zM5 14h3v6H5v-6zm6-5h3v11h-3V9z"/></svg></div>
+                            <div class="type-info">
+                                <h4>Rapid Fire</h4>
+                                <p>Automatically repeat a button press at a configurable rate.</p>
+                            </div>
+                            <div class="type-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>
+                        </button>
+
+                        <button class="macro-type-card" data-type="toggle" onclick="selectMacroType('toggle')">
+                            <div class="type-icon"><svg viewBox="0 0 24 24"><path d="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg></div>
+                            <div class="type-info">
+                                <h4>Toggle Hold</h4>
+                                <p>Press once to hold a button, press again to release.</p>
+                            </div>
+                            <div class="type-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>
+                        </button>
+
+                        <button class="macro-type-card" data-type="sequence" onclick="selectMacroType('sequence')">
+                            <div class="type-icon"><svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
+                            <div class="type-info">
+                                <h4>Sequence / Combo</h4>
+                                <p>Execute a series of button presses with custom timing.</p>
+                            </div>
+                            <div class="type-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>
+                        </button>
+
+                        <button class="macro-type-card" data-type="turbo" onclick="selectMacroType('turbo')">
+                            <div class="type-icon"><svg viewBox="0 0 24 24"><path d="M13 2.05v2.02c3.95.49 7 3.85 7 7.93 0 3.21-1.92 6-4.72 7.28L13 17v5l5-5-1.28-1.28c2.18-1.58 3.62-4.11 3.62-6.97 0-4.42-3.36-8.06-7.67-8.47L13 2.05zM11 2.05c-4.31.41-7.67 4.05-7.67 8.47 0 2.86 1.44 5.39 3.62 6.97L5.67 18.77 11 24v-5l-2.28 2.28C5.92 19.98 4 17.19 4 13.98c0-4.08 3.05-7.44 7-7.93V2.05z"/></svg></div>
+                            <div class="type-info">
+                                <h4>Turbo</h4>
+                                <p>Hold to rapid fire, release to stop. Classic turbo behavior.</p>
+                            </div>
+                            <div class="type-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Trigger -->
+                <div class="creator-step-content" id="step-2">
+                    <h3 class="step-title">Which button activates this macro?</h3>
+                    <p class="step-description">Select the trigger button and activation mode.</p>
+
+                    <div class="trigger-config">
+                        <div class="button-selector">
+                            <h4 class="selector-title">Trigger Button</h4>
+                            <div class="button-grid" id="triggerButtonGrid">
+                                <button class="button-option" data-button="cross" onclick="selectTriggerButton('cross')"><span class="button-symbol">✕</span><span class="button-name">Cross</span></button>
+                                <button class="button-option" data-button="circle" onclick="selectTriggerButton('circle')"><span class="button-symbol">○</span><span class="button-name">Circle</span></button>
+                                <button class="button-option" data-button="square" onclick="selectTriggerButton('square')"><span class="button-symbol">□</span><span class="button-name">Square</span></button>
+                                <button class="button-option" data-button="triangle" onclick="selectTriggerButton('triangle')"><span class="button-symbol">△</span><span class="button-name">Triangle</span></button>
+                                <button class="button-option" data-button="l1" onclick="selectTriggerButton('l1')"><span class="button-symbol">L1</span><span class="button-name">L1</span></button>
+                                <button class="button-option" data-button="r1" onclick="selectTriggerButton('r1')"><span class="button-symbol">R1</span><span class="button-name">R1</span></button>
+                                <button class="button-option" data-button="l2" onclick="selectTriggerButton('l2')"><span class="button-symbol">L2</span><span class="button-name">L2</span></button>
+                                <button class="button-option" data-button="r2" onclick="selectTriggerButton('r2')"><span class="button-symbol">R2</span><span class="button-name">R2</span></button>
+                                <button class="button-option" data-button="dpad_up" onclick="selectTriggerButton('dpad_up')"><span class="button-symbol">↑</span><span class="button-name">D-Up</span></button>
+                                <button class="button-option" data-button="dpad_down" onclick="selectTriggerButton('dpad_down')"><span class="button-symbol">↓</span><span class="button-name">D-Down</span></button>
+                                <button class="button-option" data-button="dpad_left" onclick="selectTriggerButton('dpad_left')"><span class="button-symbol">←</span><span class="button-name">D-Left</span></button>
+                                <button class="button-option" data-button="dpad_right" onclick="selectTriggerButton('dpad_right')"><span class="button-symbol">→</span><span class="button-name">D-Right</span></button>
+                                <button class="button-option" data-button="l3" onclick="selectTriggerButton('l3')"><span class="button-symbol">L3</span><span class="button-name">L-Stick</span></button>
+                                <button class="button-option" data-button="r3" onclick="selectTriggerButton('r3')"><span class="button-symbol">R3</span><span class="button-name">R-Stick</span></button>
+                                <button class="button-option" data-button="options" onclick="selectTriggerButton('options')"><span class="button-symbol">☰</span><span class="button-name">Options</span></button>
+                                <button class="button-option" data-button="create" onclick="selectTriggerButton('create')"><span class="button-symbol">⊞</span><span class="button-name">Create</span></button>
+                                <button class="button-option" data-button="ps" onclick="selectTriggerButton('ps')"><span class="button-symbol">PS</span><span class="button-name">PS</span></button>
+                                <button class="button-option" data-button="touchpad" onclick="selectTriggerButton('touchpad')"><span class="button-symbol">▭</span><span class="button-name">Touchpad</span></button>
+                                <button class="button-option" data-button="mute" onclick="selectTriggerButton('mute')"><span class="button-symbol">🔇</span><span class="button-name">Mute</span></button>
+                            </div>
+                        </div>
+
+                        <div class="trigger-options">
+                            <h4 class="selector-title">Activation Mode</h4>
+                            <div class="activation-modes">
+                                <label class="mode-option"><input type="radio" name="activationMode" value="on_press" checked><div class="mode-content"><span class="mode-name">On Press</span><span class="mode-desc">Activates when pressed</span></div></label>
+                                <label class="mode-option"><input type="radio" name="activationMode" value="on_hold"><div class="mode-content"><span class="mode-name">While Held</span><span class="mode-desc">Active while held</span></div></label>
+                                <label class="mode-option"><input type="radio" name="activationMode" value="on_release"><div class="mode-content"><span class="mode-name">On Release</span><span class="mode-desc">Activates on release</span></div></label>
+                                <label class="mode-option"><input type="radio" name="activationMode" value="toggle"><div class="mode-content"><span class="mode-name">Toggle</span><span class="mode-desc">Press to start/stop</span></div></label>
+                            </div>
+
+                            <div class="modifier-section">
+                                <label class="checkbox-option"><input type="checkbox" id="useModifier" onchange="toggleModifier()"><span>Use modifier button</span></label>
+                                <select class="form-select" id="modifierButton" disabled>
+                                    <option value="">Select modifier...</option>
+                                    <option value="l1">L1</option>
+                                    <option value="r1">R1</option>
+                                    <option value="l2">L2</option>
+                                    <option value="r2">R2</option>
+                                    <option value="l3">L3</option>
+                                    <option value="r3">R3</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Action -->
+                <div class="creator-step-content" id="step-3">
+                    <h3 class="step-title">Configure the macro action</h3>
+                    <p class="step-description" id="step3Description">Set up what happens when the macro is triggered.</p>
+
+                    <div class="action-config" id="config-rapid_fire">
+                        <div class="config-row">
+                            <div class="config-group">
+                                <label class="form-label">Target Button</label>
+                                <p class="form-hint">The button that will be rapid-fired</p>
+                                <select class="form-select" id="rapidFireTarget">
+                                    <option value="">Same as trigger</option>
+                                    <optgroup label="Face Buttons"><option value="cross">Cross (✕)</option><option value="circle">Circle (○)</option><option value="square">Square (□)</option><option value="triangle">Triangle (△)</option></optgroup>
+                                    <optgroup label="Shoulders"><option value="l1">L1</option><option value="r1">R1</option><option value="l2">L2</option><option value="r2">R2</option></optgroup>
+                                </select>
+                            </div>
+                            <div class="config-group">
+                                <label class="form-label">Fire Rate</label>
+                                <p class="form-hint">Presses per second (1-60)</p>
+                                <div class="input-with-unit">
+                                    <input type="number" class="form-input" id="rapidFireRate" value="10" min="1" max="60" oninput="updateRapidFirePreview()">
+                                    <span class="input-unit">presses/sec</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-preview"><span class="preview-label">Preview:</span><span class="preview-text" id="rapidFirePreview">Button will press 10 times per second (100ms interval)</span></div>
+                    </div>
+
+                    <div class="action-config" id="config-toggle" style="display: none;">
+                        <div class="config-row">
+                            <div class="config-group">
+                                <label class="form-label">Button to Hold</label>
+                                <p class="form-hint">The button that will be toggled on/off</p>
+                                <select class="form-select" id="toggleTarget">
+                                    <option value="">Same as trigger</option>
+                                    <optgroup label="Face Buttons"><option value="cross">Cross (✕)</option><option value="circle">Circle (○)</option><option value="square">Square (□)</option><option value="triangle">Triangle (△)</option></optgroup>
+                                    <optgroup label="Shoulders"><option value="l1">L1</option><option value="r1">R1</option><option value="l2">L2</option><option value="r2">R2</option></optgroup>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-config" id="config-turbo" style="display: none;">
+                        <div class="config-row">
+                            <div class="config-group">
+                                <label class="form-label">Target Button</label>
+                                <p class="form-hint">The button that will turbo while held</p>
+                                <select class="form-select" id="turboTarget">
+                                    <option value="">Same as trigger</option>
+                                    <optgroup label="Face Buttons"><option value="cross">Cross (✕)</option><option value="circle">Circle (○)</option><option value="square">Square (□)</option><option value="triangle">Triangle (△)</option></optgroup>
+                                    <optgroup label="Shoulders"><option value="l1">L1</option><option value="r1">R1</option><option value="l2">L2</option><option value="r2">R2</option></optgroup>
+                                </select>
+                            </div>
+                            <div class="config-group">
+                                <label class="form-label">Turbo Rate</label>
+                                <p class="form-hint">Presses per second while held</p>
+                                <div class="input-with-unit">
+                                    <input type="number" class="form-input" id="turboRate" value="15" min="1" max="60">
+                                    <span class="input-unit">presses/sec</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-config" id="config-sequence" style="display: none;">
+                        <div class="sequence-builder">
+                            <div class="sequence-header"><span class="form-label">Action Sequence</span><button class="add-action-btn" onclick="addSequenceStep()"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>Add Step</button></div>
+                            <div class="sequence-steps" id="sequenceSteps"><div class="empty-sequence"><p>Click "Add Step" to build your sequence.</p></div></div>
+                            <div class="sequence-options">
+                                <div class="config-group inline"><label class="form-label">Loop</label><input type="number" class="form-input small" id="sequenceLoops" value="1" min="1" max="99"><span>times</span></div>
+                                <div class="config-group inline"><label class="form-label">Delay between loops</label><input type="number" class="form-input small" id="sequenceLoopDelay" value="0" min="0" max="5000"><span>ms</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Details -->
+                <div class="creator-step-content" id="step-4">
+                    <h3 class="step-title">Name and save your macro</h3>
+                    <p class="step-description">Give your macro a name and description.</p>
+
+                    <div class="details-form">
+                        <div class="form-group"><label class="form-label">Macro Name *</label><input type="text" class="form-input large" id="macroName" placeholder="e.g., Rapid Fire R2"></div>
+                        <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="macroDescription" placeholder="Describe what this macro does..."></textarea></div>
+                        <div class="form-group">
+                            <label class="checkbox-option prominent"><input type="checkbox" id="makeGlobal"><div class="checkbox-content"><span class="checkbox-title">Make this a Global Macro</span><span class="checkbox-desc">Global macros can be added to any profile.</span></div></label>
+                        </div>
+                        <div class="macro-summary"><h4>Summary</h4><div class="summary-grid" id="macroSummary"></div></div>
+                    </div>
+                </div>
+
+                <div class="creator-nav">
+                    <button class="nav-btn" id="prevStepBtn" onclick="prevStep()" style="visibility: hidden;"><svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>Previous</button>
+                    <button class="nav-btn primary" id="nextStepBtn" onclick="nextStep()">Next<svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Remap Creator View -->
+        <div id="remapCreatorView" class="creator-view" style="display: none;">
+            <div class="creator-header">
+                <button class="back-btn" onclick="closeRemapCreator()">
+                    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                    <span>Cancel</span>
+                </button>
+                <div class="creator-title">
+                    <h2 id="remapCreatorTitle">Create Remap</h2>
+                </div>
+                <button class="save-btn" onclick="saveRemap()">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    <span>Save Remap</span>
+                </button>
+            </div>
+
+            <div class="creator-content remap-creator-content">
+                <!-- Live Preview -->
+                <div class="remap-preview-card">
+                    <div class="remap-preview-visual">
+                        <div class="preview-button from">
+                            <span class="preview-symbol" id="previewFromSymbol">?</span>
+                            <span class="preview-name" id="previewFromName">Select</span>
+                        </div>
+                        <svg class="preview-arrow" id="previewArrow" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                        <div class="preview-button to">
+                            <span class="preview-symbol" id="previewToSymbol">?</span>
+                            <span class="preview-name" id="previewToName">Select</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="remap-config-grid">
+                    <!-- From Button -->
+                    <div class="remap-config-section">
+                        <div class="config-section-header">
+                            <h3>From Button</h3>
+                            <p>The physical button you'll press</p>
+                        </div>
+                        <input type="hidden" id="remapFromButton" value="">
+                        <div class="button-grid compact" id="remapFromGrid">
+                            <div class="button-group-label">Face</div>
+                            <div class="button-option" data-button="cross" onclick="selectRemapFrom('cross')"><span class="button-symbol">✕</span><span class="button-name">Cross</span></div>
+                            <div class="button-option" data-button="circle" onclick="selectRemapFrom('circle')"><span class="button-symbol">○</span><span class="button-name">Circle</span></div>
+                            <div class="button-option" data-button="square" onclick="selectRemapFrom('square')"><span class="button-symbol">□</span><span class="button-name">Square</span></div>
+                            <div class="button-option" data-button="triangle" onclick="selectRemapFrom('triangle')"><span class="button-symbol">△</span><span class="button-name">Triangle</span></div>
+                            
+                            <div class="button-group-label">Shoulders</div>
+                            <div class="button-option" data-button="l1" onclick="selectRemapFrom('l1')"><span class="button-symbol">L1</span><span class="button-name">L1</span></div>
+                            <div class="button-option" data-button="r1" onclick="selectRemapFrom('r1')"><span class="button-symbol">R1</span><span class="button-name">R1</span></div>
+                            <div class="button-option" data-button="l2" onclick="selectRemapFrom('l2')"><span class="button-symbol">L2</span><span class="button-name">L2</span></div>
+                            <div class="button-option" data-button="r2" onclick="selectRemapFrom('r2')"><span class="button-symbol">R2</span><span class="button-name">R2</span></div>
+                            
+                            <div class="button-group-label">D-Pad</div>
+                            <div class="button-option" data-button="dpad_up" onclick="selectRemapFrom('dpad_up')"><span class="button-symbol">↑</span><span class="button-name">Up</span></div>
+                            <div class="button-option" data-button="dpad_down" onclick="selectRemapFrom('dpad_down')"><span class="button-symbol">↓</span><span class="button-name">Down</span></div>
+                            <div class="button-option" data-button="dpad_left" onclick="selectRemapFrom('dpad_left')"><span class="button-symbol">←</span><span class="button-name">Left</span></div>
+                            <div class="button-option" data-button="dpad_right" onclick="selectRemapFrom('dpad_right')"><span class="button-symbol">→</span><span class="button-name">Right</span></div>
+                            
+                            <div class="button-group-label">Sticks</div>
+                            <div class="button-option" data-button="l3" onclick="selectRemapFrom('l3')"><span class="button-symbol">L3</span><span class="button-name">L3</span></div>
+                            <div class="button-option" data-button="r3" onclick="selectRemapFrom('r3')"><span class="button-symbol">R3</span><span class="button-name">R3</span></div>
+                            
+                            <div class="button-group-label">System</div>
+                            <div class="button-option" data-button="start" onclick="selectRemapFrom('start')"><span class="button-symbol">⏵</span><span class="button-name">Start</span></div>
+                            <div class="button-option" data-button="select" onclick="selectRemapFrom('select')"><span class="button-symbol">⏸</span><span class="button-name">Select</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Swap Button -->
+                    <div class="remap-swap-section">
+                        <button class="swap-btn" onclick="swapRemapButtons()" title="Swap buttons">
+                            <svg viewBox="0 0 24 24"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- To Button -->
+                    <div class="remap-config-section">
+                        <div class="config-section-header">
+                            <h3>To Button</h3>
+                            <p>The button action that will be triggered</p>
+                        </div>
+                        <input type="hidden" id="remapToButton" value="">
+                        <div class="button-grid compact" id="remapToGrid">
+                            <div class="button-group-label">Face</div>
+                            <div class="button-option" data-button="cross" onclick="selectRemapTo('cross')"><span class="button-symbol">✕</span><span class="button-name">Cross</span></div>
+                            <div class="button-option" data-button="circle" onclick="selectRemapTo('circle')"><span class="button-symbol">○</span><span class="button-name">Circle</span></div>
+                            <div class="button-option" data-button="square" onclick="selectRemapTo('square')"><span class="button-symbol">□</span><span class="button-name">Square</span></div>
+                            <div class="button-option" data-button="triangle" onclick="selectRemapTo('triangle')"><span class="button-symbol">△</span><span class="button-name">Triangle</span></div>
+                            
+                            <div class="button-group-label">Shoulders</div>
+                            <div class="button-option" data-button="l1" onclick="selectRemapTo('l1')"><span class="button-symbol">L1</span><span class="button-name">L1</span></div>
+                            <div class="button-option" data-button="r1" onclick="selectRemapTo('r1')"><span class="button-symbol">R1</span><span class="button-name">R1</span></div>
+                            <div class="button-option" data-button="l2" onclick="selectRemapTo('l2')"><span class="button-symbol">L2</span><span class="button-name">L2</span></div>
+                            <div class="button-option" data-button="r2" onclick="selectRemapTo('r2')"><span class="button-symbol">R2</span><span class="button-name">R2</span></div>
+                            
+                            <div class="button-group-label">D-Pad</div>
+                            <div class="button-option" data-button="dpad_up" onclick="selectRemapTo('dpad_up')"><span class="button-symbol">↑</span><span class="button-name">Up</span></div>
+                            <div class="button-option" data-button="dpad_down" onclick="selectRemapTo('dpad_down')"><span class="button-symbol">↓</span><span class="button-name">Down</span></div>
+                            <div class="button-option" data-button="dpad_left" onclick="selectRemapTo('dpad_left')"><span class="button-symbol">←</span><span class="button-name">Left</span></div>
+                            <div class="button-option" data-button="dpad_right" onclick="selectRemapTo('dpad_right')"><span class="button-symbol">→</span><span class="button-name">Right</span></div>
+                            
+                            <div class="button-group-label">Sticks</div>
+                            <div class="button-option" data-button="l3" onclick="selectRemapTo('l3')"><span class="button-symbol">L3</span><span class="button-name">L3</span></div>
+                            <div class="button-option" data-button="r3" onclick="selectRemapTo('r3')"><span class="button-symbol">R3</span><span class="button-name">R3</span></div>
+                            
+                            <div class="button-group-label">System</div>
+                            <div class="button-option" data-button="start" onclick="selectRemapTo('start')"><span class="button-symbol">⏵</span><span class="button-name">Start</span></div>
+                            <div class="button-option" data-button="select" onclick="selectRemapTo('select')"><span class="button-symbol">⏸</span><span class="button-name">Select</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Options -->
+                <div class="remap-options">
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="remapBidirectional" onchange="updateRemapPreview()">
+                        <div class="checkbox-content">
+                            <span class="checkbox-title">Bidirectional Swap</span>
+                            <span class="checkbox-desc">Both buttons will trigger each other's action</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div class="modal-overlay" id="renameModal"><div class="modal"><div class="modal-title">Rename Controller</div><input type="text" class="modal-input" id="renameInput" placeholder="Enter custom name..."><div class="modal-actions"><button class="modal-btn" onclick="closeRenameModal()">Cancel</button><button class="modal-btn primary" onclick="saveRename()">Save</button></div></div></div>
+    <div class="modal-overlay" id="createProfileModal"><div class="modal"><div class="modal-title">Create Profile</div><label class="modal-label">Name</label><input type="text" class="modal-input" id="profileNameInput" placeholder="My Custom Profile"><label class="modal-label">Description (optional)</label><textarea class="modal-textarea" id="profileDescInput" placeholder="Describe this profile..."></textarea><div class="modal-actions"><button class="modal-btn" onclick="closeCreateProfileModal()">Cancel</button><button class="modal-btn primary" onclick="createProfile()">Create</button></div></div></div>
+    <div class="modal-overlay" id="deleteProfileModal"><div class="modal"><div class="modal-title">Delete Profile</div><p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Are you sure you want to delete "<span id="deleteProfileName"></span>"?</p><div class="modal-actions"><button class="modal-btn" onclick="closeDeleteProfileModal()">Cancel</button><button class="modal-btn danger" onclick="confirmDeleteProfile()">Delete</button></div></div></div>
+    <div class="modal-overlay" id="deleteMacroModal"><div class="modal"><div class="modal-title">Delete Macro</div><p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Are you sure you want to delete "<span id="deleteMacroName"></span>"?</p><div class="modal-actions"><button class="modal-btn" onclick="closeDeleteMacroModal()">Cancel</button><button class="modal-btn danger" onclick="confirmDeleteMacro()">Delete</button></div></div></div>
+    <div class="modal-overlay" id="deleteRemapModal"><div class="modal"><div class="modal-title">Delete Remap</div><p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Are you sure you want to delete the remap "<span id="deleteRemapDesc"></span>"?</p><div class="modal-actions"><button class="modal-btn" onclick="closeDeleteRemapModal()">Cancel</button><button class="modal-btn danger" onclick="confirmDeleteRemap()">Delete</button></div></div></div>
+    <div class="modal-overlay" id="globalMacroModal"><div class="modal modal-large"><div class="modal-header"><div class="modal-title">Add Global Macro</div><button class="modal-close-btn" onclick="closeGlobalMacroSelector()"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div><div class="global-macros-list" id="globalMacrosList"><div class="empty-state">No global macros available.</div></div><div class="modal-actions"><button class="modal-btn" onclick="closeGlobalMacroSelector()">Cancel</button></div></div></div>
+
+    <script src="./static/js/state.js"></script>
+    <script src="./static/js/api.js"></script>
+    <script src="./static/js/controller.js"></script>
+    <script src="./static/js/profiles.js"></script>
+    <script src="./static/js/macros.js"></script>
+    <script src="./static/js/macro-creator.js"></script>
+    <script src="./static/js/remaps.js"></script>
+    <script src="./static/js/main.js"></script>
+</body>
+</html>
