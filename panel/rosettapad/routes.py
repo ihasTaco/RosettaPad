@@ -3,12 +3,13 @@ API route handlers for the RosettaPad web server.
 """
 
 import uuid
-from aiohttp import web
+from aiohttp import web # type: ignore
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .bluetooth import BluetoothManager
     from .profiles import ProfileManager
+    from .lightbar import LightbarManager, LightbarConfig, Color
 
 
 class BluetoothRoutes:
@@ -103,7 +104,7 @@ class ProfileRoutes:
         data = await request.json()
         if not self.pm.update_profile(profile_id, data.get("name"), data.get("description")):
             return web.json_response({"success": False, "error": "Profile not found"}, status=404)
-        return web.json_response({"success": True, "profile": self.pm.get_profile(profile_id).to_dict()})
+        return web.json_response({"success": True, "profile": self.pm.get_profile(profile_id).to_dict()}) # type: ignore
     
     async def delete_profile(self, request: web.Request) -> web.Response:
         profile_id = request.match_info.get("profile_id")
@@ -307,3 +308,378 @@ class RemapRoutes:
         app.router.add_get(f"{base}/{{remap_id}}", self.get_remap)
         app.router.add_put(f"{base}/{{remap_id}}", self.update_remap)
         app.router.add_delete(f"{base}/{{remap_id}}", self.delete_remap)
+
+class LightbarRoutes:
+    """API routes for lightbar configuration."""
+    
+    def __init__(self, lightbar_manager: "LightbarManager"):
+        self.lm = lightbar_manager
+    
+    async def get_state(self, request: web.Request) -> web.Response:
+        """Get current lightbar state."""
+        return web.json_response(self.lm.get_current_state())
+    
+    async def set_config(self, request: web.Request) -> web.Response:
+        """Set lightbar configuration."""
+        from .lightbar import LightbarConfig
+        
+        data = await request.json()
+        try:
+            config = LightbarConfig.from_dict(data)
+            self.lm.apply_config(config)
+            return web.json_response({"success": True, "config": config.to_dict()})
+        except Exception as e:
+            return web.json_response({"success": False, "error": str(e)}, status=400)
+    
+    async def set_color(self, request: web.Request) -> web.Response:
+        """Quick endpoint to set a static color."""
+        from .lightbar import LightbarConfig, LightbarMode, Color
+        
+        data = await request.json()
+        
+        # Accept both hex and RGB
+        if "hex" in data:
+            color = Color.from_hex(data["hex"])
+        else:
+            color = Color(
+                r=data.get("r", 0),
+                g=data.get("g", 0),
+                b=data.get("b", 255)
+            )
+        
+        brightness = data.get("brightness", 1.0)
+        
+        config = LightbarConfig(
+            mode=LightbarMode.STATIC,
+            color=color,
+            brightness=brightness
+        )
+        self.lm.apply_config(config)
+        
+        return web.json_response({
+            "success": True, 
+            "color": color.to_dict(),
+            "hex": color.to_hex()
+        })
+    
+    async def set_mode(self, request: web.Request) -> web.Response:
+        """Set lightbar mode with optional parameters."""
+        from .lightbar import LightbarConfig, LightbarMode, Color
+        
+        data = await request.json()
+        mode_str = data.get("mode", "static")
+        
+        try:
+            mode = LightbarMode(mode_str)
+        except ValueError:
+            return web.json_response({
+                "success": False, 
+                "error": f"Invalid mode: {mode_str}"
+            }, status=400)
+        
+        # Start with current config as base
+        config = self.lm.current_config
+        config.mode = mode
+        
+        # Update any provided parameters
+        if "brightness" in data:
+            config.brightness = max(0.0, min(1.0, float(data["brightness"])))
+        
+        if "color" in data:
+            if isinstance(data["color"], str):
+                config.color = Color.from_hex(data["color"])
+            else:
+                config.color = Color.from_dict(data["color"])
+        
+        # Mode-specific parameters
+        if mode == LightbarMode.BREATHING:
+            if "speed_ms" in data:
+                config.breathing_speed_ms = int(data["speed_ms"])
+            if "min_brightness" in data:
+                config.breathing_min_brightness = float(data["min_brightness"])
+            if "color2" in data:
+                if isinstance(data["color2"], str):
+                    config.breathing_color2 = Color.from_hex(data["color2"])
+                else:
+                    config.breathing_color2 = Color.from_dict(data["color2"])
+        
+        elif mode == LightbarMode.RAINBOW:
+            if "speed_ms" in data:
+                config.rainbow_speed_ms = int(data["speed_ms"])
+            if "saturation" in data:
+                config.rainbow_saturation = float(data["saturation"])
+        
+        elif mode == LightbarMode.WAVE:
+            if "speed_ms" in data:
+                config.wave_speed_ms = int(data["speed_ms"])
+            if "colors" in data:
+                config.wave_colors = [
+                    Color.from_hex(c) if isinstance(c, str) else Color.from_dict(c)
+                    for c in data["colors"]
+                ]
+        
+        elif mode == LightbarMode.CUSTOM:
+            if "animation_id" in data:
+                config.custom_animation_id = data["animation_id"]
+        
+        self.lm.apply_config(config)
+        return web.json_response({"success": True, "config": config.to_dict()})
+    
+    async def turn_off(self, request: web.Request) -> web.Response:
+        """Turn off the lightbar."""
+        from .lightbar import LightbarConfig, LightbarMode
+        
+        config = LightbarConfig(mode=LightbarMode.OFF)
+        self.lm.apply_config(config)
+        return web.json_response({"success": True})
+    
+    async def set_battery(self, request: web.Request) -> web.Response:
+        """Update battery level for battery-reactive mode."""
+        data = await request.json()
+        level = data.get("level", 100)
+        self.lm.set_battery_level(level)
+        return web.json_response({"success": True, "battery": level})
+    
+    async def set_player_leds(self, request: web.Request) -> web.Response:
+        """Set player indicator LEDs."""
+        data = await request.json()
+        
+        # Accept either a bitmask or individual LED states
+        if "leds" in data:
+            self.lm.current_config.player_leds = int(data["leds"])
+        elif "led_states" in data:
+            # led_states: [bool, bool, bool, bool, bool]
+            states = data["led_states"]
+            mask = 0
+            for i, state in enumerate(states[:5]):
+                if state:
+                    mask |= (1 << i)
+            self.lm.current_config.player_leds = mask
+        
+        if "brightness" in data:
+            self.lm.current_config.player_led_brightness = float(data["brightness"])
+        
+        # Reapply current config to update LEDs
+        self.lm.apply_config(self.lm.current_config)
+        
+        return web.json_response({
+            "success": True, 
+            "player_leds": self.lm.current_config.player_leds
+        })
+    
+    # =================================================================
+    # Animation CRUD
+    # =================================================================
+    async def list_animations(self, request: web.Request) -> web.Response:
+        """List all available animations."""
+        animations = self.lm.get_all_animations()
+        return web.json_response({
+            "animations": [a.to_dict() for a in animations],
+            "presets": list(self.lm.PRESET_ANIMATIONS.keys()),
+            "custom": list(self.lm.custom_animations.keys())
+        })
+    
+    async def get_animation(self, request: web.Request) -> web.Response:
+        """Get a specific animation by ID."""
+        anim_id = request.match_info.get("animation_id")
+        anim = self.lm.get_animation(anim_id)
+        
+        if not anim:
+            return web.json_response({"error": "Animation not found"}, status=404)
+        
+        return web.json_response(anim.to_dict())
+    
+    async def create_animation(self, request: web.Request) -> web.Response:
+        """Create a new custom animation."""
+        data = await request.json()
+        
+        name = data.get("name", "").strip()
+        if not name:
+            return web.json_response({
+                "success": False, 
+                "error": "Name is required"
+            }, status=400)
+        
+        keyframes = data.get("keyframes", [])
+        if not keyframes:
+            return web.json_response({
+                "success": False,
+                "error": "At least one keyframe is required"
+            }, status=400)
+        
+        anim = self.lm.create_animation(
+            name=name,
+            keyframes=keyframes,
+            duration_ms=data.get("duration_ms", 1000),
+            loop=data.get("loop", True)
+        )
+        
+        return web.json_response({"success": True, "animation": anim.to_dict()})
+    
+    async def update_animation(self, request: web.Request) -> web.Response:
+        """Update a custom animation."""
+        anim_id = request.match_info.get("animation_id")
+        
+        # Check if it's a preset (can't edit presets)
+        if anim_id in self.lm.PRESET_ANIMATIONS:
+            return web.json_response({
+                "success": False,
+                "error": "Cannot edit preset animations"
+            }, status=400)
+        
+        data = await request.json()
+        if not self.lm.update_animation(anim_id, **data):
+            return web.json_response({
+                "success": False,
+                "error": "Animation not found"
+            }, status=404)
+        
+        anim = self.lm.get_animation(anim_id)
+        return web.json_response({"success": True, "animation": anim.to_dict()})
+    
+    async def delete_animation(self, request: web.Request) -> web.Response:
+        """Delete a custom animation."""
+        anim_id = request.match_info.get("animation_id")
+        
+        if anim_id in self.lm.PRESET_ANIMATIONS:
+            return web.json_response({
+                "success": False,
+                "error": "Cannot delete preset animations"
+            }, status=400)
+        
+        if not self.lm.delete_animation(anim_id):
+            return web.json_response({
+                "success": False,
+                "error": "Animation not found"
+            }, status=404)
+        
+        return web.json_response({"success": True})
+    
+    async def preview_animation(self, request: web.Request) -> web.Response:
+        """Preview an animation without saving."""
+        from .lightbar import LightbarConfig, LightbarMode
+        
+        anim_id = request.match_info.get("animation_id")
+        anim = self.lm.get_animation(anim_id)
+        
+        if not anim:
+            return web.json_response({"error": "Animation not found"}, status=404)
+        
+        config = LightbarConfig(
+            mode=LightbarMode.CUSTOM,
+            custom_animation_id=anim_id
+        )
+        self.lm.apply_config(config)
+        
+        return web.json_response({"success": True, "animation": anim.to_dict()})
+    
+    # =================================================================
+    # Presets
+    # =================================================================
+    async def list_presets(self, request: web.Request) -> web.Response:
+        """List color and configuration presets."""
+        from .lightbar import PresetColors
+        
+        color_presets = {
+            "red": PresetColors.RED.to_dict(),
+            "green": PresetColors.GREEN.to_dict(),
+            "blue": PresetColors.BLUE.to_dict(),
+            "cyan": PresetColors.CYAN.to_dict(),
+            "magenta": PresetColors.MAGENTA.to_dict(),
+            "yellow": PresetColors.YELLOW.to_dict(),
+            "orange": PresetColors.ORANGE.to_dict(),
+            "purple": PresetColors.PURPLE.to_dict(),
+            "pink": PresetColors.PINK.to_dict(),
+            "white": PresetColors.WHITE.to_dict(),
+            "ps_blue": PresetColors.PS_BLUE.to_dict(),
+            "ps_light": PresetColors.PS_LIGHT.to_dict(),
+        }
+        
+        animation_presets = list(self.lm.PRESET_ANIMATIONS.keys())
+        
+        return web.json_response({
+            "colors": color_presets,
+            "animations": animation_presets,
+            "modes": ["off", "static", "breathing", "rainbow", "wave", "battery", "custom"]
+        })
+    
+    async def apply_preset(self, request: web.Request) -> web.Response:
+        """Apply a named preset."""
+        from .lightbar import LightbarConfig, LightbarMode, Color, PresetColors
+        
+        preset_name = request.match_info.get("preset_name")
+        
+        # Check if it's a color preset
+        color_presets = {
+            "red": PresetColors.RED,
+            "green": PresetColors.GREEN,
+            "blue": PresetColors.BLUE,
+            "cyan": PresetColors.CYAN,
+            "magenta": PresetColors.MAGENTA,
+            "yellow": PresetColors.YELLOW,
+            "orange": PresetColors.ORANGE,
+            "purple": PresetColors.PURPLE,
+            "pink": PresetColors.PINK,
+            "white": PresetColors.WHITE,
+            "ps_blue": PresetColors.PS_BLUE,
+            "ps_light": PresetColors.PS_LIGHT,
+        }
+        
+        if preset_name in color_presets:
+            config = LightbarConfig(
+                mode=LightbarMode.STATIC,
+                color=color_presets[preset_name]
+            )
+            self.lm.apply_config(config)
+            return web.json_response({
+                "success": True, 
+                "type": "color",
+                "config": config.to_dict()
+            })
+        
+        # Check if it's an animation preset
+        if preset_name in self.lm.PRESET_ANIMATIONS:
+            config = LightbarConfig(
+                mode=LightbarMode.CUSTOM,
+                custom_animation_id=preset_name
+            )
+            self.lm.apply_config(config)
+            return web.json_response({
+                "success": True,
+                "type": "animation",
+                "config": config.to_dict()
+            })
+        
+        return web.json_response({
+            "success": False,
+            "error": f"Unknown preset: {preset_name}"
+        }, status=404)
+    
+    def register_routes(self, app: web.Application, prefix: str = "/api") -> None:
+        """Register all lightbar routes."""
+        # State management
+        app.router.add_get(f"{prefix}/lightbar", self.get_state)
+        app.router.add_post(f"{prefix}/lightbar", self.set_config)
+        app.router.add_post(f"{prefix}/lightbar/color", self.set_color)
+        app.router.add_post(f"{prefix}/lightbar/mode", self.set_mode)
+        app.router.add_post(f"{prefix}/lightbar/off", self.turn_off)
+        app.router.add_post(f"{prefix}/lightbar/battery", self.set_battery)
+        app.router.add_post(f"{prefix}/lightbar/player-leds", self.set_player_leds)
+        
+        # Animations
+        app.router.add_get(f"{prefix}/lightbar/animations", self.list_animations)
+        app.router.add_post(f"{prefix}/lightbar/animations", self.create_animation)
+        app.router.add_get(f"{prefix}/lightbar/animations/{{animation_id}}", self.get_animation)
+        app.router.add_put(f"{prefix}/lightbar/animations/{{animation_id}}", self.update_animation)
+        app.router.add_delete(f"{prefix}/lightbar/animations/{{animation_id}}", self.delete_animation)
+        app.router.add_post(f"{prefix}/lightbar/animations/{{animation_id}}/preview", self.preview_animation)
+        
+        # Presets
+        app.router.add_get(f"{prefix}/lightbar/presets", self.list_presets)
+        app.router.add_post(f"{prefix}/lightbar/presets/{{preset_name}}", self.apply_preset)
+
+
+
+
+
+

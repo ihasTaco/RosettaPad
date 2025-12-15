@@ -1,5 +1,5 @@
 {
-  "active_profile_id": "test",
+  "active_profile_id": "default",
   "profiles": [
     {
       "id": "default",
@@ -8,37 +8,6 @@
       "is_default": true,
       "macros": [],
       "button_remaps": []
-    },
-    {
-      "id": "test",
-      "name": "test",
-      "description": "",
-      "is_default": false,
-      "macros": [
-        {
-          "id": "511de639",
-          "name": "Circle Rapid Fire",
-          "trigger_button": "mute",
-          "trigger_mode": "on_press",
-          "actions": [
-            {
-              "type": "rapid_fire",
-              "button": "circle",
-              "duration_ms": 100
-            }
-          ],
-          "enabled": true
-        }
-      ],
-      "button_remaps": [
-        {
-          "id": "be4ff3a5",
-          "from_button": "cross",
-          "to_button": "circle",
-          "bidirectional": true,
-          "enabled": true
-        }
-      ]
     }
   ]
 }

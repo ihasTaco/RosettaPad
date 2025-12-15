@@ -178,14 +178,15 @@
 }
 
 .type-info h4 {
+    color: var(--text-primary);
     font-size: 1rem;
     font-weight: 700;
     margin-bottom: 0.25rem;
 }
 
 .type-info p {
+    color: var(--text-muted) !important;
     font-size: 0.85rem;
-    color: var(--text-muted);
     line-height: 1.4;
 }
 
