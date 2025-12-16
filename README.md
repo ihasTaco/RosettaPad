@@ -20,7 +20,7 @@ RosettaPad is a system that allows you to pair any (eventually) generic controll
   | PS Button | ✅ | |
   | Analog Sticks | ✅ | |
   | Rumble | ➖ | Tested on PS3 games, need to verify PS2 mode compatibility |
-  | Acceleration & Gyro | ➖ | Gyro works. Acceleration implemented but PS3 not reading it. It's likely a flag or feature report issue |
+  | Acceleration & Gyro | ➖ | Gyro works. Acceleration implemented but PS3 not reading it. PS3 will not use the accelerometer data were sending it, will need to implement bluetooth pairing to get the ps3 to send the f4 report to the controller to enable sixaxis |
   | Power Display | ➖ | Byte 30 controls battery status; need to wire DS5 battery to this |
   | Adaptive Triggers | ⬜ | This will not allow the dynamic adaptive triggers, just would be cool to have |
   | Touchpad as precision joystick | ⬜ | |
@@ -263,5 +263,6 @@ After installation:
 ## Credits & Attribution
 - [Eleccelerator](https://eleccelerator.com/wiki/index.php?title=DualShock_3)
 - [Torvalds](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-sony.c)
+- [Felis](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp) - Details how the PS3 tells the DS3 to turn on Sixaxis controls (also has some details on power reporting and what bytes 29 & 31 do.
 
 If you use any of the protocol documentation or findings from this project, please provide attribution by linking back to this repository.
