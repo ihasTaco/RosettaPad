@@ -258,8 +258,8 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
         
         // Convert to DS3 format (centered around ~512 for accel, ~498 for gyro)
         // DualSense has different scaling, so we need to convert
-        // DS3 accel: ~512 at rest, ±~400 range
-        // DualSense accel: ~0 at rest (after bias), ±~8192 range
+        // DS3 accel: ~512 at rest, Â±~400 range
+        // DualSense accel: ~0 at rest (after bias), Â±~8192 range
         
         int16_t ds3_accel_x = 512 + (ds_accel_x / 16);
         int16_t ds3_accel_y = 512 + (ds_accel_y / 16);
@@ -267,6 +267,30 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
         int16_t ds3_gyro_z  = 498 + (ds_gyro_z / 32);  // DS3 only has Z gyro
         
         ds3_update_motion(ds3_accel_x, ds3_accel_y, ds3_accel_z, ds3_gyro_z);
+    }
+    
+    // Process battery status if available (byte 54 in BT report)
+    if (len >= 55) {
+        // DualSense battery byte format:
+        // Bits 0-3: Battery level (0-10, multiply by 10 for percentage)
+        // Bit 4: Charging status (1 = charging)
+        // Bits 5-7: Power state
+        uint8_t battery_byte = buf[DS_OFF_BATTERY];
+        uint8_t battery_level = (battery_byte & 0x0F) * 10;  // 0-100%
+        int is_charging = (battery_byte & 0x10) ? 1 : 0;
+        
+        // Cap at 100%
+        if (battery_level > 100) battery_level = 100;
+        
+        // Debug: print battery info periodically
+        static int battery_debug_count = 0;
+        if (++battery_debug_count >= 250) {
+            battery_debug_count = 0;
+            printf("[DualSense] Battery raw=0x%02x level=%d%% charging=%d\n",
+                   battery_byte, battery_level, is_charging);
+        }
+        
+        ds3_update_battery_from_dualsense(battery_level, is_charging);
     }
     
     return 0;

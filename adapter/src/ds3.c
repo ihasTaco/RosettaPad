@@ -53,13 +53,7 @@ static uint8_t report_f8[DS3_FEATURE_REPORT_SIZE] = {
     0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-// Report 0xEF (Configuration) - Real DS3 returns static response, does NOT echo SET_REPORT data
-static uint8_t report_ef[DS3_FEATURE_REPORT_SIZE] = {
-    0x00, 0xef, 0x04, 0x00, 0x08, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
+static uint8_t report_ef[DS3_FEATURE_REPORT_SIZE] = {0xEF};  // First byte is report ID
 
 // =================================================================
 // Public Functions
@@ -110,8 +104,12 @@ void ds3_handle_set_report(uint8_t report_id, const uint8_t* data, size_t len) {
     printf("[DS3] SET_REPORT 0x%02x received (%zu bytes)\n", report_id, len);
     
     if (report_id == DS3_REPORT_EF) {
-        // PS3 sends SET_REPORT 0xEF during init, real DS3 just ACKs and returns static response on GET
-        printf("[DS3] Config 0xEF received (byte6=0x%02x)\n", len > 6 ? data[6] : 0);
+        // PS3 sends SET_REPORT 0xEF during init
+        // Store the data and prepend 0xEF for GET_REPORT response
+        report_ef[0] = 0xEF;
+        size_t copy_len = (len > DS3_FEATURE_REPORT_SIZE - 1) ? DS3_FEATURE_REPORT_SIZE - 1 : len;
+        memcpy(&report_ef[1], data, copy_len);
+        printf("[DS3] Config 0xEF stored (%zu bytes)\n", len);
     }
     else if (report_id == 0xF4 && len >= 5) {
         // LED configuration report
@@ -191,4 +189,51 @@ void ds3_copy_report(uint8_t* out_buf) {
     pthread_mutex_lock(&g_report_mutex);
     memcpy(out_buf, g_ds3_report, DS3_INPUT_REPORT_SIZE);
     pthread_mutex_unlock(&g_report_mutex);
+}
+
+void ds3_update_battery(uint8_t plugged, uint8_t battery, uint8_t connection) {
+    pthread_mutex_lock(&g_report_mutex);
+    g_ds3_report[DS3_OFF_BATTERY] = plugged;
+    g_ds3_report[DS3_OFF_CHARGE] = battery;
+    g_ds3_report[DS3_OFF_CONNECTION] = connection;
+    pthread_mutex_unlock(&g_report_mutex);
+}
+
+void ds3_update_battery_from_dualsense(uint8_t ds_battery_level, int ds_charging) {
+    uint8_t battery_status;
+    
+    if (ds_charging) {
+        // When charging via USB, show charging status
+        if (ds_battery_level >= 100) {
+            battery_status = DS3_BATTERY_CHARGED;   // 0xEF - fully charged
+        } else {
+            battery_status = DS3_BATTERY_CHARGING;  // 0xEE - charging
+        }
+    } else {
+        // Convert DualSense percentage to DS3 battery level
+        // DS3 uses: 0x00=0%, 0x01=1%, 0x02=25%, 0x03=50%, 0x04=75%, 0x05=100%
+        if (ds_battery_level <= 5) {
+            battery_status = DS3_BATTERY_SHUTDOWN;  // 0x00
+        } else if (ds_battery_level <= 15) {
+            battery_status = DS3_BATTERY_DYING;     // 0x01
+        } else if (ds_battery_level <= 35) {
+            battery_status = DS3_BATTERY_LOW;       // 0x02
+        } else if (ds_battery_level <= 60) {
+            battery_status = DS3_BATTERY_MEDIUM;    // 0x03
+        } else if (ds_battery_level <= 85) {
+            battery_status = DS3_BATTERY_HIGH;      // 0x04
+        } else {
+            battery_status = DS3_BATTERY_FULL;      // 0x05
+        }
+    }
+    
+    // We're always USB-connected to PS3, check if rumble is active
+    uint8_t connection;
+    pthread_mutex_lock(&g_rumble_mutex);
+    int rumble_active = (g_rumble_right > 0 || g_rumble_left > 0);
+    pthread_mutex_unlock(&g_rumble_mutex);
+    
+    connection = rumble_active ? DS3_CONN_USB_RUMBLE : DS3_CONN_USB;
+    
+    ds3_update_battery(DS3_STATUS_PLUGGED, battery_status, connection);
 }

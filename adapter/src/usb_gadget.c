@@ -365,7 +365,7 @@ void* usb_input_thread(void* arg) {
             static int report_count = 0;
             if (report_count >= 250) {
                 report_count = 0;
-                printf("[DS3 Report] 49 bytes to PS2:\n");
+                printf("[DS3 Report] 49 bytes to PS3:\n");
                 printf("00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f\n");
                 printf("-----------------------------------------------\n");
                 for (int i = 0; i < DS3_INPUT_REPORT_SIZE; i++) {
@@ -373,6 +373,8 @@ void* usb_input_thread(void* arg) {
                     printf("%02x ", buf[i]);
                     if (i % 16 == 15 || i == DS3_INPUT_REPORT_SIZE - 1) printf("\n");
                 }
+                printf("Battery: Plugged=%02x Charge=%02x Conn=%02x\n",
+                       buf[29], buf[30], buf[31]);
                 printf("Motion: AccelX=%02x%02x AccelY=%02x%02x AccelZ=%02x%02x GyroZ=%02x%02x\n",
                        buf[41], buf[40], buf[43], buf[42],
                        buf[45], buf[44], buf[47], buf[46]);
