@@ -50,6 +50,23 @@ extern lightbar_state_t g_lightbar_state;
 extern pthread_mutex_t g_lightbar_mutex;
 
 // =================================================================
+// Touchpad-as-R3 Configuration
+// =================================================================
+extern volatile int g_touchpad_as_r3;  // 0=disabled, 1=enabled
+
+// Touchpad state for tracking touch position
+typedef struct {
+    int active;          // Is finger touching?
+    int initial_x;       // X position when touch started
+    int initial_y;       // Y position when touch started
+    int current_x;       // Current X position
+    int current_y;       // Current Y position
+} touchpad_state_t;
+
+extern touchpad_state_t g_touchpad_state;
+extern pthread_mutex_t g_touchpad_mutex;
+
+// =================================================================
 // Debug Utilities
 // =================================================================
 void print_hex(const char* label, const uint8_t* data, size_t len);

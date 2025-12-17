@@ -53,9 +53,9 @@ uint8_t g_ds3_report[DS3_REPORT_SIZE] = {
     0x00,       // [26] Reserved
     0x00,       // [27] Reserved
     0x00,       // [28] Reserved
-    0x03,       // [29] Battery level (0x03 = 3 bars)
-    0xef,       // [30] Charging status (0xEF = USB charging)
-    0x16,       // [31] Connection status
+    0x02,       // [29] Plugged status: 0x02=Plugged, 0x03=Unplugged
+    0xee,       // [30] Battery: 0x00-0x05=capacity, 0xEE=charging, 0xEF=full, 0xF1=error
+    0x12,       // [31] Connection: 0x10=USB+Rumble, 0x12=USB, 0x14=BT+Rumble, 0x16=BT
     // Bytes 32-48
     0x00,       // [32] Reserved
     0x00,       // [33] Reserved
@@ -76,9 +76,14 @@ uint8_t g_rumble_right = 0;
 uint8_t g_rumble_left = 0;
 pthread_mutex_t g_rumble_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Lightbar state (default: blue)
-lightbar_state_t g_lightbar_state = {0, 0, 255, 0, 255};
+// Lightbar state (default: red)
+lightbar_state_t g_lightbar_state = {255, 0, 0, 0, 255};
 pthread_mutex_t g_lightbar_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Touchpad-as-R3 configuration
+volatile int g_touchpad_as_r3 = 1;  // Enabled by default
+touchpad_state_t g_touchpad_state = {0, 0, 0, 0, 0};
+pthread_mutex_t g_touchpad_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // =================================================================
 // Debug Utilities

@@ -10,6 +10,32 @@
 #include <stddef.h>
 
 // =================================================================
+// DS3 Battery / Connection Status (USB mode - shifted 9 bytes from BT)
+// =================================================================
+
+// Byte 29 - Plugged status
+#define DS3_STATUS_PLUGGED      0x02
+#define DS3_STATUS_UNPLUGGED    0x03
+
+// Byte 30 - Battery level / charging status
+// Maps to sixaxis_battery_capacity[] = { 0, 1, 25, 50, 75, 100 }
+#define DS3_BATTERY_SHUTDOWN    0x00  // 0% - shutdown imminent
+#define DS3_BATTERY_DYING       0x01  // ~1% - critical
+#define DS3_BATTERY_LOW         0x02  // ~25% - low
+#define DS3_BATTERY_MEDIUM      0x03  // ~50% - medium
+#define DS3_BATTERY_HIGH        0x04  // ~75% - high
+#define DS3_BATTERY_FULL        0x05  // ~100% - full (on battery)
+#define DS3_BATTERY_CHARGING    0xEE  // Plugged in, charging
+#define DS3_BATTERY_CHARGED     0xEF  // Plugged in, fully charged
+#define DS3_BATTERY_NOT_CHARGING 0xF1 // Plugged in, not charging (error)
+
+// Byte 31 - Connection mode
+#define DS3_CONN_USB_RUMBLE     0x10  // USB connected, rumble on
+#define DS3_CONN_USB            0x12  // USB connected, rumble off
+#define DS3_CONN_BT_RUMBLE      0x14  // Bluetooth, rumble on
+#define DS3_CONN_BT             0x16  // Bluetooth, rumble off
+
+// =================================================================
 // DS3 Feature Reports
 // =================================================================
 
@@ -79,7 +105,9 @@
 #define DS3_OFF_CIRCLE_P      23
 #define DS3_OFF_CROSS_P       24
 #define DS3_OFF_SQUARE_P      25
-#define DS3_OFF_BATTERY       30  // Battery/charging status
+#define DS3_OFF_BATTERY       29  // Plugged status
+#define DS3_OFF_CHARGE        30  // Battery level / charging status
+#define DS3_OFF_CONNECTION    31  // Connection mode (USB/BT, rumble on/off)
 #define DS3_OFF_ACCEL_X       40  // Accelerometer X (little-endian 16-bit)
 #define DS3_OFF_ACCEL_Y       42
 #define DS3_OFF_ACCEL_Z       44
@@ -139,6 +167,14 @@ void ds3_update_report(
  * @param gyro_z Gyroscope Z axis (yaw)
  */
 void ds3_update_motion(int16_t accel_x, int16_t accel_y, int16_t accel_z, int16_t gyro_z);
+
+/**
+ * Update battery status from DualSense battery level
+ * Converts DualSense battery percentage to DS3 format
+ * @param ds_battery_level DualSense battery level (0-100)
+ * @param ds_charging 1 if charging, 0 if not
+ */
+void ds3_update_battery_from_dualsense(uint8_t ds_battery_level, int ds_charging);
 
 /**
  * Copy current DS3 report to buffer (thread-safe)

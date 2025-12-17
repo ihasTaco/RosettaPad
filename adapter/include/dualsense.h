@@ -19,7 +19,7 @@
 // =================================================================
 #define DS_BT_REPORT_ID       0x31
 #define DS_BT_INPUT_SIZE      78
-#define DS_BT_OUTPUT_SIZE     79
+#define DS_BT_OUTPUT_SIZE     78   // Fixed: was 79, should be 78
 
 // Input report byte offsets (for report ID 0x31)
 #define DS_OFF_REPORT_ID      0
@@ -40,7 +40,14 @@
 #define DS_OFF_ACCEL_X        22  // Accelerometer (16-bit LE)
 #define DS_OFF_ACCEL_Y        24
 #define DS_OFF_ACCEL_Z        26
+#define DS_OFF_TOUCHPAD       34  // Touchpad data (BT report: offset 2 + struct offset 32)
 #define DS_OFF_BATTERY        54  // Battery level and status
+
+// Touchpad constants
+#define DS_TOUCHPAD_WIDTH     1920
+#define DS_TOUCHPAD_HEIGHT    1080
+#define DS_TOUCH_POINT_SIZE   4    // Each touch point is 4 bytes
+#define DS_TOUCH_INACTIVE     0x80 // Bit 7 set = finger not touching
 
 // =================================================================
 // DualSense Button Masks - Byte 9 (buttons1)
