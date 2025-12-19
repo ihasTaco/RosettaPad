@@ -12,6 +12,8 @@
 // =================================================================
 volatile int g_running = 1;
 volatile int g_usb_enabled = 0;
+volatile int g_mode_switching = 0;
+volatile int g_pairing_complete = 0;
 
 // File descriptors
 int g_ep0_fd = -1;
@@ -61,8 +63,8 @@ uint8_t g_ds3_report[DS3_REPORT_SIZE] = {
     0x00,       // [33] Reserved
     0x00,       // [34] Reserved
     0x00,       // [35] Reserved
-    0x33, 0x04, // [36-37] Unknown status (from capture)
-    0x77, 0x01, // [38-39] Unknown status (from capture)
+    0x33, 0x04, // [36-37] Unknown status (from real DS3 capture)
+    0x77, 0x01, // [38-39] Unknown status (from real DS3 capture)
     0xde, 0x02, // [40-41] Accelerometer X (rest ~734 = 0x02de)
     0x35, 0x02, // [42-43] Accelerometer Y (rest ~565 = 0x0235)
     0x08, 0x01, // [44-45] Accelerometer Z (rest ~264 = 0x0108)

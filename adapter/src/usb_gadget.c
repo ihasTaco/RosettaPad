@@ -15,6 +15,7 @@
 #include "common.h"
 #include "ds3.h"
 #include "usb_gadget.h"
+#include "debug.h"
 
 // =================================================================
 // USB Descriptors
@@ -134,7 +135,7 @@ static const struct {
 // =================================================================
 
 int usb_gadget_init(void) {
-    printf("[USB] Initializing USB gadget...\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Initializing USB gadget...");
     
     // Load required kernel modules
     system("modprobe libcomposite 2>/dev/null");
@@ -142,7 +143,7 @@ int usb_gadget_init(void) {
     
     // Create gadget if it doesn't exist
     if (access(USB_GADGET_PATH, F_OK) != 0) {
-        printf("[USB] Creating gadget configuration...\n");
+        debug_print(DBG_INIT | DBG_USB, "[USB] Creating gadget configuration...");
         
         system("mkdir -p " USB_GADGET_PATH);
         
@@ -180,13 +181,13 @@ int usb_gadget_init(void) {
     
     int ret = system("mount -t functionfs usb0 " USB_FFS_PATH);
     if (ret != 0) {
-        printf("[USB] Warning: mount returned %d\n", ret);
+        debug_print(DBG_WARN | DBG_USB, "[USB] mount returned %d", ret);
     }
     
     // Create IPC directory
     system("mkdir -p /tmp/rosettapad");
     
-    printf("[USB] Gadget initialized\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Gadget initialized");
     return 0;
 }
 
@@ -205,7 +206,7 @@ int usb_gadget_write_descriptors(int ep0_fd) {
         return -1;
     }
     
-    printf("[USB] Descriptors written to ep0\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Descriptors written to ep0");
     return 0;
 }
 
@@ -214,7 +215,7 @@ int usb_gadget_bind(void) {
     snprintf(cmd, sizeof(cmd), "echo '%s' > %s/UDC", USB_UDC_NAME, USB_GADGET_PATH);
     int ret = system(cmd);
     if (ret == 0) {
-        printf("[USB] Bound to UDC %s\n", USB_UDC_NAME);
+        debug_print(DBG_INIT | DBG_USB, "[USB] Bound to UDC %s", USB_UDC_NAME);
     }
     return ret == 0 ? 0 : -1;
 }
@@ -223,7 +224,7 @@ int usb_gadget_unbind(void) {
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "echo '' > %s/UDC", USB_GADGET_PATH);
     system(cmd);
-    printf("[USB] Unbound from UDC\n");
+    debug_print(DBG_USB, "[USB] Unbound from UDC");
     return 0;
 }
 
@@ -250,14 +251,14 @@ int usb_open_endpoint(int endpoint_num) {
 void* usb_control_thread(void* arg) {
     (void)arg;
     
-    printf("[USB] Control thread started\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Control thread started");
     
     while (g_running) {
         struct usb_functionfs_event event;
         
         if (read(g_ep0_fd, &event, sizeof(event)) < 0) {
             if (errno == EINTR) continue;
-            perror("[USB] read ep0");
+            debug_print(DBG_ERROR | DBG_USB, "[USB] read ep0 failed: %s", strerror(errno));
             break;
         }
         
@@ -269,12 +270,12 @@ void* usb_control_thread(void* arg) {
                 uint16_t wLength = event.u.setup.wLength;
                 uint8_t report_id = wValue & 0xFF;
                 
-                printf("[USB] SETUP: bmReqType=0x%02x bReq=0x%02x wValue=0x%04x wLen=%d\n",
-                       bmRequestType, bRequest, wValue, wLength);
+                debug_print(DBG_USB_CTRL, "[USB] SETUP: bmReqType=0x%02X bReq=0x%02X wValue=0x%04X wLen=%d",
+                            bmRequestType, bRequest, wValue, wLength);
                 
                 if (bRequest == 0x0A) {
                     // SET_IDLE - just acknowledge
-                    printf("[USB] SET_IDLE\n");
+                    debug_print(DBG_HANDSHAKE, "[USB] SET_IDLE");
                     read(g_ep0_fd, NULL, 0);
                 }
                 else if (bRequest == 0x01) {
@@ -285,11 +286,12 @@ void* usb_control_thread(void* arg) {
                     if (data) {
                         size_t send_len = (DS3_FEATURE_REPORT_SIZE < wLength) ? 
                                           DS3_FEATURE_REPORT_SIZE : wLength;
-                        printf("[USB] GET_REPORT 0x%02x (%s) -> %zu bytes\n", 
-                               report_id, name, send_len);
+                        debug_print(DBG_REPORTS, "[USB] GET_REPORT 0x%02X (%s) -> %zu bytes", 
+                                    report_id, name, send_len);
+                        debug_hex(DBG_REPORTS | DBG_VERBOSE, "Report data", data, send_len);
                         write(g_ep0_fd, data, send_len);
                     } else {
-                        printf("[USB] GET_REPORT 0x%02x unknown, stalling\n", report_id);
+                        debug_print(DBG_REPORTS, "[USB] GET_REPORT 0x%02X unknown, stalling", report_id);
                         read(g_ep0_fd, NULL, 0);  // Stall
                     }
                 }
@@ -300,7 +302,8 @@ void* usb_control_thread(void* arg) {
                     
                     if (wLength > 0) {
                         r = read(g_ep0_fd, buf, wLength < 64 ? wLength : 64);
-                        printf("[USB] SET_REPORT 0x%02x: %zd bytes\n", report_id, r);
+                        debug_print(DBG_REPORTS, "[USB] SET_REPORT 0x%02X: %zd bytes", report_id, r);
+                        debug_hex(DBG_REPORTS | DBG_VERBOSE, "SET_REPORT data", buf, r);
                         if (r > 0) {
                             ds3_handle_set_report(report_id, buf, r);
                         }
@@ -308,19 +311,19 @@ void* usb_control_thread(void* arg) {
                     write(g_ep0_fd, NULL, 0);  // ACK
                 }
                 else {
-                    printf("[USB] Unknown request 0x%02x, stalling\n", bRequest);
+                    debug_print(DBG_USB_CTRL, "[USB] Unknown request 0x%02X, stalling", bRequest);
                     read(g_ep0_fd, NULL, 0);  // Stall
                 }
                 break;
             }
             
             case FUNCTIONFS_ENABLE:
-                printf("[USB] *** ENABLED - PS3 connected ***\n");
+                debug_print(DBG_USB | DBG_INFO, "[USB] *** ENABLED - PS3 connected ***");
                 g_usb_enabled = 1;
                 break;
                 
             case FUNCTIONFS_DISABLE:
-                printf("[USB] *** DISABLED - PS3 disconnected ***\n");
+                debug_print(DBG_USB | DBG_INFO, "[USB] *** DISABLED - PS3 disconnected ***");
                 g_usb_enabled = 0;
                 pthread_mutex_lock(&g_rumble_mutex);
                 g_rumble_right = 0;
@@ -329,12 +332,15 @@ void* usb_control_thread(void* arg) {
                 break;
                 
             case FUNCTIONFS_UNBIND:
-                printf("[USB] UNBIND\n");
-                g_running = 0;
+                debug_print(DBG_USB, "[USB] UNBIND");
+                // Only stop everything if not switching modes
+                if (!g_mode_switching) {
+                    g_running = 0;
+                }
                 break;
                 
             default:
-                printf("[USB] Event type=%d\n", event.type);
+                debug_print(DBG_USB | DBG_VERBOSE, "[USB] Event type=%d", event.type);
                 break;
         }
         
@@ -349,37 +355,39 @@ void* usb_input_thread(void* arg) {
     
     g_ep1_fd = usb_open_endpoint(1);
     if (g_ep1_fd < 0) {
-        printf("[USB] Failed to open ep1\n");
+        debug_print(DBG_ERROR | DBG_USB, "[USB] Failed to open ep1");
         return NULL;
     }
     
-    printf("[USB] Input thread started (ep1)\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Input thread started (ep1)");
     
     uint8_t buf[DS3_INPUT_REPORT_SIZE];
+    static int report_counter = 0;
+    static int motion_counter = 0;
     
     while (g_running) {
         if (g_usb_enabled) {
             ds3_copy_report(buf);
             
-            // Debug: print full report every ~1 second (250 reports)
-            static int report_count = 0;
-            if (report_count >= 250) {
-                report_count = 0;
-                printf("[DS3 Report] 49 bytes to PS2:\n");
-                printf("00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f\n");
-                printf("-----------------------------------------------\n");
-                for (int i = 0; i < DS3_INPUT_REPORT_SIZE; i++) {
-                    if (i % 16 == 0 && i != 0) printf("%02X: ", i);
-                    printf("%02x ", buf[i]);
-                    if (i % 16 == 15 || i == DS3_INPUT_REPORT_SIZE - 1) printf("\n");
-                }
-                printf("Motion: AccelX=%02x%02x AccelY=%02x%02x AccelZ=%02x%02x GyroZ=%02x%02x\n",
-                       buf[41], buf[40], buf[43], buf[42],
-                       buf[45], buf[44], buf[47], buf[46]);
-                printf("\n");
-                fflush(stdout);
+            // Debug: print full report periodically
+            debug_periodic(DBG_DS3_RAW | DBG_PERIODIC, &report_counter,
+                           "[USB] DS3 Report to PS3 (49 bytes)");
+            if (debug_enabled(DBG_DS3_RAW | DBG_VERBOSE)) {
+                debug_hex(DBG_DS3_RAW | DBG_VERBOSE, "DS3 Report", buf, DS3_INPUT_REPORT_SIZE);
             }
-            report_count++;
+            
+            // Detailed motion debug
+            if (debug_enabled(DBG_MOTION)) {
+                if (++motion_counter >= 250) {
+                    motion_counter = 0;
+                    int16_t ax = buf[40] | (buf[41] << 8);
+                    int16_t ay = buf[42] | (buf[43] << 8);
+                    int16_t az = buf[44] | (buf[45] << 8);
+                    int16_t gz = buf[46] | (buf[47] << 8);
+                    debug_print(DBG_MOTION, "[USB] Motion: AccelX=%+6d AccelY=%+6d AccelZ=%+6d GyroZ=%+6d", 
+                                ax, ay, az, gz);
+                }
+            }
 
             write(g_ep1_fd, buf, DS3_INPUT_REPORT_SIZE);
         }
@@ -394,11 +402,11 @@ void* usb_output_thread(void* arg) {
     
     g_ep2_fd = usb_open_endpoint(2);
     if (g_ep2_fd < 0) {
-        printf("[USB] Failed to open ep2\n");
+        debug_print(DBG_ERROR | DBG_USB, "[USB] Failed to open ep2");
         return NULL;
     }
     
-    printf("[USB] Output thread started (ep2)\n");
+    debug_print(DBG_INIT | DBG_USB, "[USB] Output thread started (ep2)");
     
     uint8_t buf[EP_MAX_PACKET];
     
@@ -412,6 +420,8 @@ void* usb_output_thread(void* arg) {
             }
             continue;
         }
+        
+        debug_hex(DBG_USB_DATA | DBG_VERBOSE, "PS3 output report", buf, n);
         
         // PS3 output report format:
         // buf[0] = report ID (usually 0x01)
@@ -429,6 +439,8 @@ void* usb_output_thread(void* arg) {
             // DS3 strong motor: 0-255 -> DS 0-255
             uint8_t ds_right = right_power ? 0xFF : 0x00;
             uint8_t ds_left = left_power;
+            
+            debug_print(DBG_RUMBLE, "[USB] PS3 rumble -> DualSense: right=%d left=%d", ds_right, ds_left);
             
             pthread_mutex_lock(&g_rumble_mutex);
             g_rumble_right = ds_right;

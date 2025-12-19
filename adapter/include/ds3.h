@@ -42,6 +42,7 @@
 // Report sizes
 #define DS3_FEATURE_REPORT_SIZE 64
 #define DS3_INPUT_REPORT_SIZE   49
+#define DS3_BT_INPUT_REPORT_SIZE 50  // 0xA1 header + 49 bytes
 
 // Report IDs
 #define DS3_REPORT_CAPABILITIES 0x01
@@ -181,5 +182,40 @@ void ds3_update_battery_from_dualsense(uint8_t ds_battery_level, int ds_charging
  * @param out_buf Buffer to copy to (must be DS3_INPUT_REPORT_SIZE bytes)
  */
 void ds3_copy_report(uint8_t* out_buf);
+
+/**
+ * Copy current DS3 report in Bluetooth format (thread-safe)
+ * Adjusts connection status byte and swaps motion sensor endianness
+ * @param out_buf Buffer to copy to (must be DS3_BT_INPUT_REPORT_SIZE bytes)
+ *                Will contain: 0xA1 header + 49 bytes report
+ */
+void ds3_copy_bt_report(uint8_t* out_buf);
+
+/**
+ * Save Bluetooth pairing information
+ * Called when PS3 sends SET_REPORT 0xF5 during USB pairing
+ * @param ps3_addr PS3's Bluetooth address string
+ */
+void ds3_save_pairing(const char* ps3_addr);
+
+/**
+ * Get stored PS3 Bluetooth address (from pairing)
+ * @return Address string or NULL if not paired
+ */
+const char* ds3_get_ps3_address(void);
+
+/**
+ * Get local Bluetooth address
+ * @return Address string
+ */
+const char* ds3_get_local_address(void);
+
+/**
+ * Update F2 report with correct local Bluetooth MAC
+ * Call after Bluetooth is initialized since /sys/class/bluetooth/hci0
+ * may not exist during early init
+ * @param mac 6-byte MAC address
+ */
+void ds3_set_local_bt_mac(const uint8_t* mac);
 
 #endif // ROSETTAPAD_DS3_H

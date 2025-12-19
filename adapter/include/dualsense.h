@@ -21,7 +21,28 @@
 #define DS_BT_INPUT_SIZE      78
 #define DS_BT_OUTPUT_SIZE     78   // Fixed: was 79, should be 78
 
-// Input report byte offsets (for report ID 0x31)
+// =================================================================
+// DualSense USB Report Format
+// =================================================================
+#define DS_USB_REPORT_ID      0x01
+#define DS_USB_INPUT_SIZE     64
+
+// USB input report byte offsets (for report ID 0x01)
+// Based on actual 10-byte report from kernel hid-playstation driver:
+// 01 LX LY RX RY BTN1 L2 CTR R2 BTN2
+#define DS_USB_OFF_REPORT_ID  0
+#define DS_USB_OFF_LX         1
+#define DS_USB_OFF_LY         2
+#define DS_USB_OFF_RX         3
+#define DS_USB_OFF_RY         4
+#define DS_USB_OFF_BUTTONS1   5   // D-pad (low nibble) + face buttons (high nibble)
+#define DS_USB_OFF_L2         6   // L2 trigger analog
+#define DS_USB_OFF_COUNTER    7   // Counter byte (ignore)
+#define DS_USB_OFF_R2         8   // R2 trigger analog
+#define DS_USB_OFF_BUTTONS2   9   // Shoulders, sticks, options/create
+// Note: buttons3 (PS, touchpad, mute) not available in 10-byte report
+
+// BT input report byte offsets (for report ID 0x31)
 #define DS_OFF_REPORT_ID      0
 #define DS_OFF_COUNTER        1
 #define DS_OFF_LX             2

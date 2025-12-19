@@ -6,13 +6,20 @@
 #define ROSETTAPAD_COMMON_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <pthread.h>
+
+// Include unified debug system
+#include "debug.h"
 
 // =================================================================
 // Global State
 // =================================================================
 extern volatile int g_running;
 extern volatile int g_usb_enabled;
+extern volatile int g_mode_switching;  // Don't exit on USB UNBIND when switching modes
+extern volatile int g_mode_switching;  // Set when deliberately switching modes
+extern volatile int g_pairing_complete;  // Set when PS3 pairing received, signals mode switch
 
 // File descriptors
 extern int g_ep0_fd;
@@ -67,7 +74,7 @@ extern touchpad_state_t g_touchpad_state;
 extern pthread_mutex_t g_touchpad_mutex;
 
 // =================================================================
-// Debug Utilities
+// Legacy Debug Utilities (use DBG macros instead)
 // =================================================================
 void print_hex(const char* label, const uint8_t* data, size_t len);
 
