@@ -1,20 +1,35 @@
 #!/bin/bash
 set -e
 
+SERVICE_NAME="rosettapad"
+INSTALL_DIR="/opt/rosettapad"
+
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo ./uninstall.sh"
     exit 1
 fi
 
-echo "Stopping service..."
-systemctl stop ds3-adapter 2>/dev/null || true
-systemctl disable ds3-adapter 2>/dev/null || true
+echo "=== RosettaPad Uninstaller ==="
+echo
 
-echo "Removing files..."
-rm -f /etc/systemd/system/ds3-adapter.service
-rm -f /usr/local/bin/ds3-adapter
-rm -rf /opt/ds3-adapter
+echo "[1/4] Stopping service..."
+systemctl stop $SERVICE_NAME 2>/dev/null || true
+systemctl disable $SERVICE_NAME 2>/dev/null || true
 
+echo "[2/4] Removing service..."
+rm -f /etc/systemd/system/${SERVICE_NAME}.service
 systemctl daemon-reload
 
-echo "Uninstalled. Boot config changes in /boot/firmware/config.txt were not removed."
+echo "[3/4] Removing symlink..."
+rm -f /usr/local/bin/rosettapad
+
+echo "[4/4] Removing installation directory..."
+rm -rf "$INSTALL_DIR"
+
+echo
+echo "=== Uninstall Complete ==="
+echo
+echo "Note: Boot config changes in /boot/firmware/config.txt were NOT removed."
+echo "If you want to disable USB gadget mode, manually remove:"
+echo "  - 'dtoverlay=dwc2,dr_mode=peripheral' from config.txt"
+echo "  - 'modules-load=dwc2' from cmdline.txt"

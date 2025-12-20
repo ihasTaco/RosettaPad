@@ -212,7 +212,7 @@ void dualsense_send_output(int fd,
     report[DS_OUT_TAG] = 0x10;  // Magic tag value
     
     // Valid flags - tell controller which features we're setting
-    report[DS_OUT_VALID_FLAG0] = DS_OUTPUT_VALID0_RUMBLE;
+    report[DS_OUT_VALID_FLAG0] = DS_OUTPUT_VALID0_RUMBLE | DS_OUTPUT_VALID0_HAPTICS;
     report[DS_OUT_VALID_FLAG1] = DS_OUTPUT_VALID1_LIGHTBAR | DS_OUTPUT_VALID1_PLAYER_LEDS;
     
     // Rumble motors
@@ -494,58 +494,52 @@ void* dualsense_thread(void* arg) {
     return NULL;
 }
 
-void dualsense_send_output(int fd,
-    uint8_t right_motor, uint8_t left_motor,
-    uint8_t led_r, uint8_t led_g, uint8_t led_b,
-    uint8_t player_leds)
-{
-    static uint8_t seq = 0;
-    uint8_t report[DS_BT_OUTPUT_SIZE] = {0};
+void* dualsense_output_thread(void* arg) {
+    (void)arg;
     
-    // Build BT output report (79 bytes total)
-    report[0] = 0x31;                           // Report ID for BT
-    report[1] = (seq << 4) | 0x10;              // Sequence number + TAG (0x10 required!)
-    seq = (seq + 1) & 0x0F;
+    printf("[DualSense] Output thread started\n");
     
-    // Valid Flag 0 (byte 2): Enable compatible vibration
-    report[2] = 0x01 | 0x02;                    // COMPATIBLE_VIBRATION | HAPTICS_SELECT
+    uint8_t last_right = 0, last_left = 0;
+    lightbar_state_t last_lightbar = {0, 0, 0, 0, 0};
+    int update_count = 0;
     
-    // Valid Flag 1 (byte 3): Enable lightbar and player LEDs
-    report[3] = 0x04 | 0x10;                    // LIGHTBAR_CONTROL | PLAYER_INDICATOR_CONTROL
-    
-    // Valid Flag 2 (byte 4): Enable lightbar setup
-    report[4] = 0x02;                           // LIGHTBAR_SETUP_CONTROL_ENABLE
-    
-    // Rumble motors (bytes 5-6)
-    report[5] = right_motor;                    // Right (high frequency)
-    report[6] = left_motor;                     // Left (low frequency)
-    
-    // Lightbar setup (byte 42 in BT report = USB offset 41 + 1)
-    report[42] = 0x02;                          // LIGHTBAR_SETUP_LIGHT_OUT
-    
-    // Player LEDs brightness (byte 44)
-    report[44] = 0x02;                          // Medium brightness (0-2)
-    
-    // Player LEDs (byte 45)
-    report[45] = player_leds;
-    
-    // Lightbar RGB (bytes 46-48)
-    report[46] = led_r;
-    report[47] = led_g;
-    report[48] = led_b;
-    
-    // Calculate CRC32 (BT reports need seed byte 0xA2 prepended)
-    uint8_t crc_buf[75];
-    crc_buf[0] = 0xA2;
-    memcpy(&crc_buf[1], report, 74);
-    uint32_t crc = dualsense_calc_crc32(crc_buf, 75);
-    
-    report[74] = (crc >> 0) & 0xFF;
-    report[75] = (crc >> 8) & 0xFF;
-    report[76] = (crc >> 16) & 0xFF;
-    report[77] = (crc >> 24) & 0xFF;
-    
-    if (fd >= 0) {
-        write(fd, report, sizeof(report));
+    while (g_running) {
+        // Check for lightbar config changes periodically
+        if (++update_count >= 50) {  // Every ~500ms
+            update_count = 0;
+            read_lightbar_state();
+        }
+        
+        // Get current rumble state
+        pthread_mutex_lock(&g_rumble_mutex);
+        uint8_t right = g_rumble_right;
+        uint8_t left = g_rumble_left;
+        pthread_mutex_unlock(&g_rumble_mutex);
+        
+        // Get current lightbar state
+        pthread_mutex_lock(&g_lightbar_mutex);
+        lightbar_state_t lightbar = g_lightbar_state;
+        pthread_mutex_unlock(&g_lightbar_mutex);
+        
+        // Only send if something changed
+        int rumble_changed = (right != last_right || left != last_left);
+        int lightbar_changed = (lightbar.r != last_lightbar.r ||
+                                lightbar.g != last_lightbar.g ||
+                                lightbar.b != last_lightbar.b ||
+                                lightbar.player_leds != last_lightbar.player_leds);
+        
+        if (g_hidraw_fd >= 0 && (rumble_changed || lightbar_changed)) {
+            dualsense_send_output(g_hidraw_fd, right, left,
+                                  lightbar.r, lightbar.g, lightbar.b,
+                                  lightbar.player_leds);
+            
+            last_right = right;
+            last_left = left;
+            last_lightbar = lightbar;
+        }
+        
+        usleep(10000);  // 100Hz output rate
     }
+    
+    return NULL;
 }
