@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "=== DualSense to PS3 Adapter Installer ==="
+echo "=== RosettaPad Installer ==="
+echo "  DualSense to PS3 Controller Adapter"
 echo
 
 if [ "$EUID" -ne 0 ]; then
@@ -9,14 +10,19 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "[1/7] Installing dependencies..."
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="/opt/rosettapad"
+SERVICE_NAME="rosettapad"
+
+echo "[1/8] Installing dependencies..."
 apt-get update
 apt-get install -y build-essential bluez
 
 # Ensure Bluetooth isn't blocked
-rfkill unblock bluetooth
+rfkill unblock bluetooth 2>/dev/null || true
 
-echo "[2/7] Configuring boot parameters..."
+echo "[2/8] Configuring boot parameters..."
 
 CONFIG="/boot/firmware/config.txt"
 [ ! -f "$CONFIG" ] && CONFIG="/boot/config.txt"
@@ -31,7 +37,9 @@ if ! grep -q "dtoverlay=dwc2" "$CONFIG"; then
         echo "[all]" >> "$CONFIG"
         echo "dtoverlay=dwc2,dr_mode=peripheral" >> "$CONFIG"
     fi
-    echo "Added dwc2 overlay to $CONFIG"
+    echo "  Added dwc2 overlay to $CONFIG"
+else
+    echo "  dwc2 overlay already configured"
 fi
 
 CMDLINE="/boot/firmware/cmdline.txt"
@@ -39,24 +47,55 @@ CMDLINE="/boot/firmware/cmdline.txt"
 
 if ! grep -q "modules-load=dwc2" "$CMDLINE"; then
     sed -i 's/$/ modules-load=dwc2/' "$CMDLINE"
-    echo "Added dwc2 module to $CMDLINE"
+    echo "  Added dwc2 module to $CMDLINE"
+else
+    echo "  dwc2 module already configured"
 fi
 
-echo "[3/7] Creating installation directory..."
-mkdir -p /opt/ds3-adapter
+echo "[3/8] Creating installation directory..."
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/src"
+mkdir -p "$INSTALL_DIR/include"
 
-echo "[4/7] Compiling adapter..."
-cp ds3_adapter.c /opt/ds3-adapter/
-gcc -O2 -o /opt/ds3-adapter/ds3_adapter /opt/ds3-adapter/ds3_adapter.c -lpthread
-chmod +x /opt/ds3-adapter/ds3_adapter
+echo "[4/8] Copying source files..."
 
-echo "[5/7] Creating symlink..."
-ln -sf /opt/ds3-adapter/ds3_adapter /usr/local/bin/ds3-adapter
+# Check for source files
+if [ ! -d "$SCRIPT_DIR/adapter/src" ]; then
+    echo "Error: adapter/src directory not found!"
+    echo "Expected structure:"
+    echo "  adapter/"
+    echo "    src/*.c"
+    echo "    include/*.h"
+    exit 1
+fi
 
-echo "[6/7] Installing systemd service..."
-cat > /etc/systemd/system/ds3-adapter.service << 'SERVICE'
+# Copy source files
+cp "$SCRIPT_DIR/adapter/src/"*.c "$INSTALL_DIR/src/"
+cp "$SCRIPT_DIR/adapter/include/"*.h "$INSTALL_DIR/include/"
+
+echo "  Copied source files to $INSTALL_DIR"
+
+echo "[5/8] Compiling adapter..."
+
+# Compile all .c files together
+SRC_FILES=$(find "$INSTALL_DIR/src" -name "*.c" | tr '\n' ' ')
+
+gcc -O2 -Wall -Wextra \
+    -I"$INSTALL_DIR/include" \
+    -o "$INSTALL_DIR/rosettapad" \
+    $SRC_FILES \
+    -lpthread
+
+chmod +x "$INSTALL_DIR/rosettapad"
+echo "  Compilation successful!"
+
+echo "[6/8] Creating symlink..."
+ln -sf "$INSTALL_DIR/rosettapad" /usr/local/bin/rosettapad
+
+echo "[7/8] Installing systemd service..."
+cat > /etc/systemd/system/${SERVICE_NAME}.service << 'SERVICE'
 [Unit]
-Description=DualSense to PS3 Adapter
+Description=RosettaPad - DualSense to PS3 Controller Adapter
 After=bluetooth.target
 Wants=bluetooth.target
 
@@ -64,8 +103,8 @@ Wants=bluetooth.target
 Type=simple
 ExecStartPre=/sbin/modprobe libcomposite
 ExecStartPre=/sbin/modprobe usb_f_fs
-ExecStartPre=/usr/sbin/rfkill unblock bluetooth
-ExecStart=/opt/ds3-adapter/ds3_adapter
+ExecStartPre=/bin/sh -c '/usr/sbin/rfkill unblock bluetooth 2>/dev/null || true'
+ExecStart=/opt/rosettapad/rosettapad
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -76,22 +115,24 @@ WantedBy=multi-user.target
 SERVICE
 
 systemctl daemon-reload
-systemctl enable ds3-adapter
-echo "Service enabled for auto-start on boot"
+systemctl enable ${SERVICE_NAME}
+echo "  Service enabled for auto-start on boot"
 
-echo "[7/7] Copying documentation..."
-cp README.md /opt/ds3-adapter/
+echo "[8/8] Copying documentation..."
+[ -f "$SCRIPT_DIR/README.md" ] && cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/"
 
 echo
-echo "=== Installation Complete ==="
-echo
-echo "The adapter will start automatically on boot."
-echo
-echo "Commands:"
-echo "  sudo systemctl start ds3-adapter   # Start now"
-echo "  sudo systemctl stop ds3-adapter    # Stop"
-echo "  sudo systemctl status ds3-adapter  # Check status"
-echo "  sudo journalctl -u ds3-adapter -f  # View logs"
-echo
-echo "REBOOT REQUIRED for USB gadget mode!"
-echo "Run: sudo reboot"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              Installation Complete!                          ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║  The adapter will start automatically on boot.               ║"
+echo "║                                                              ║"
+echo "║  Commands:                                                   ║"
+echo "║    sudo systemctl start rosettapad   # Start now             ║"
+echo "║    sudo systemctl stop rosettapad    # Stop                  ║"
+echo "║    sudo systemctl status rosettapad  # Check status          ║"
+echo "║    sudo journalctl -u rosettapad -f  # View logs             ║"
+echo "║                                                              ║"
+echo "║  REBOOT REQUIRED for USB gadget mode!                        ║"
+echo "║  Run: sudo reboot                                            ║"
+echo "╚══════════════════════════════════════════════════════════════╝"

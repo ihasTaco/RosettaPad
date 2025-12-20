@@ -76,9 +76,14 @@ uint8_t g_rumble_right = 0;
 uint8_t g_rumble_left = 0;
 pthread_mutex_t g_rumble_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Lightbar state (default: blue)
-lightbar_state_t g_lightbar_state = {0, 0, 255, 0, 255};
+// Lightbar state (default: red)
+lightbar_state_t g_lightbar_state = {255, 0, 0, 0, 255};
 pthread_mutex_t g_lightbar_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Touchpad-as-R3 configuration
+volatile int g_touchpad_as_r3 = 1;  // Enabled by default
+touchpad_state_t g_touchpad_state = {0, 0, 0, 0, 0};
+pthread_mutex_t g_touchpad_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // =================================================================
 // Debug Utilities

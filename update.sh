@@ -1,19 +1,15 @@
 #!/bin/bash
 set -e
 
-# Configuration
-# Use SUDO_USER to get the actual user's home directory when running with sudo
-if [ -n "$SUDO_USER" ]; then
-    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-else
-    USER_HOME="$HOME"
-fi
-SOURCE_DIR="$USER_HOME/OpenPad"
-INSTALL_DIR="/opt/ds3-adapter"
-SERVICE_NAME="ds3-adapter"
-
-echo "=== OpenPad Updater ==="
+echo "=== RosettaPad Updater ==="
 echo
+
+# Configuration
+INSTALL_DIR="/opt/rosettapad"
+SERVICE_NAME="rosettapad"
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check for root
 if [ "$EUID" -ne 0 ]; then
@@ -22,15 +18,22 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Check source directory exists
-if [ ! -d "$SOURCE_DIR" ]; then
-    echo "Error: Source directory $SOURCE_DIR not found!"
-    echo "Create it and place your updated files there."
+if [ ! -d "$SCRIPT_DIR/adapter/src" ]; then
+    echo "Error: adapter/src directory not found!"
+    echo "Run this script from the RosettaPad directory."
     exit 1
 fi
 
-# Check for source file
-if [ ! -f "$SOURCE_DIR/ds3_adapter.c" ]; then
-    echo "Error: ds3_adapter.c not found in $SOURCE_DIR"
+# Check for at least main.c
+if [ ! -f "$SCRIPT_DIR/adapter/src/main.c" ]; then
+    echo "Error: main.c not found in adapter/src/"
+    exit 1
+fi
+
+# Check if installed
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "Error: RosettaPad not installed at $INSTALL_DIR"
+    echo "Run install.sh first."
     exit 1
 fi
 
@@ -38,16 +41,24 @@ echo "[1/4] Stopping service..."
 systemctl stop $SERVICE_NAME 2>/dev/null || echo "  (service wasn't running)"
 
 echo "[2/4] Copying source files..."
-cp "$SOURCE_DIR/ds3_adapter.c" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/adapter/src/"*.c "$INSTALL_DIR/src/"
+cp "$SCRIPT_DIR/adapter/include/"*.h "$INSTALL_DIR/include/"
 
 # Copy any other files if they exist
-[ -f "$SOURCE_DIR/README.md" ] && cp "$SOURCE_DIR/README.md" "$INSTALL_DIR/"
+[ -f "$SCRIPT_DIR/README.md" ] && cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/"
 
 echo "[3/4] Compiling..."
-if gcc -O2 -o "$INSTALL_DIR/ds3_adapter" "$INSTALL_DIR/ds3_adapter.c" -lpthread; then
+SRC_FILES=$(find "$INSTALL_DIR/src" -name "*.c" | tr '\n' ' ')
+
+if gcc -O2 -Wall -Wextra \
+    -I"$INSTALL_DIR/include" \
+    -o "$INSTALL_DIR/rosettapad" \
+    $SRC_FILES \
+    -lpthread; then
     echo "  Compilation successful!"
 else
     echo "  Compilation failed!"
+    echo "  Service not restarted."
     exit 1
 fi
 

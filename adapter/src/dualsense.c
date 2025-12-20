@@ -132,46 +132,123 @@ int dualsense_find_hidraw(void) {
     return -1;
 }
 
+// =================================================================
+// DualSense BT Output Report Structure (from Linux hid-playstation.c)
+// =================================================================
+// 
+// struct dualsense_output_report_bt (78 bytes total):
+//   [0]     report_id (0x31)
+//   [1]     seq_tag   (upper nibble = sequence 0-15, lower = 0)
+//   [2]     tag       (0x10 magic value)
+//   [3-49]  common    (47 bytes):
+//     [3]   valid_flag0 - bit0=rumble, bit1=haptics, bit2=right trigger, bit3=left trigger
+//     [4]   valid_flag1 - bit0=mic LED, bit1=power save, bit2=lightbar, bit3=player LEDs
+//     [5]   motor_right
+//     [6]   motor_left
+//     [7-10]  reserved[4] (audio)
+//     [11]  mute_button_led
+//     [12]  power_save_control
+//     [13-40] reserved2[28]
+//     [41]  valid_flag2 - bit1=lightbar setup
+//     [42-43] reserved3[2]
+//     [44]  lightbar_setup (0x02 = fade in)
+//     [45]  led_brightness
+//     [46]  player_leds
+//     [47]  lightbar_red
+//     [48]  lightbar_green
+//     [49]  lightbar_blue
+//   [50-73] reserved[24]
+//   [74-77] crc32 (little-endian)
+
+// Valid flag 0 bits
+#define DS_OUTPUT_VALID0_RUMBLE             0x01
+#define DS_OUTPUT_VALID0_HAPTICS            0x02
+#define DS_OUTPUT_VALID0_RIGHT_TRIGGER      0x04
+#define DS_OUTPUT_VALID0_LEFT_TRIGGER       0x08
+
+// Valid flag 1 bits
+#define DS_OUTPUT_VALID1_MIC_MUTE_LED       0x01
+#define DS_OUTPUT_VALID1_POWER_SAVE         0x02
+#define DS_OUTPUT_VALID1_LIGHTBAR           0x04
+#define DS_OUTPUT_VALID1_PLAYER_LEDS        0x08
+#define DS_OUTPUT_VALID1_RELEASE_LED        0x10
+
+// Valid flag 2 bits
+#define DS_OUTPUT_VALID2_LIGHTBAR_SETUP     0x02
+
+// Byte offsets in full BT output report
+#define DS_OUT_REPORT_ID        0
+#define DS_OUT_SEQ_TAG          1
+#define DS_OUT_TAG              2
+#define DS_OUT_VALID_FLAG0      3
+#define DS_OUT_VALID_FLAG1      4
+#define DS_OUT_MOTOR_RIGHT      5
+#define DS_OUT_MOTOR_LEFT       6
+#define DS_OUT_VALID_FLAG2      41
+#define DS_OUT_LIGHTBAR_SETUP   44
+#define DS_OUT_LED_BRIGHTNESS   45
+#define DS_OUT_PLAYER_LEDS      46
+#define DS_OUT_LIGHTBAR_RED     47
+#define DS_OUT_LIGHTBAR_GREEN   48
+#define DS_OUT_LIGHTBAR_BLUE    49
+
+// Report size
+#define DS_OUTPUT_REPORT_BT_SIZE 78
+
+// Sequence counter for BT reports
+static uint8_t output_seq = 0;
+
 void dualsense_send_output(int fd,
     uint8_t right_motor, uint8_t left_motor,
     uint8_t led_r, uint8_t led_g, uint8_t led_b,
     uint8_t player_leds)
 {
-    static uint8_t seq = 0;
-    uint8_t report[DS_BT_OUTPUT_SIZE] = {0};
+    uint8_t report[DS_OUTPUT_REPORT_BT_SIZE] = {0};
     
-    // Build BT output report
-    report[0] = 0x31;                    // Report ID for BT
-    report[1] = (seq << 4) | 0x00;       // Sequence number
-    seq = (seq + 1) & 0x0F;
+    // Header
+    report[DS_OUT_REPORT_ID] = 0x31;
+    report[DS_OUT_SEQ_TAG] = (output_seq << 4) | 0x00;
+    output_seq = (output_seq + 1) & 0x0F;
+    report[DS_OUT_TAG] = 0x10;  // Magic tag value
     
-    report[2] = 0x10;                    // Feature flags
-    report[3] = 0x01;                    // More flags
-    report[4] = 0x04 | 0x08;             // Enable rumble + lightbar
+    // Valid flags - tell controller which features we're setting
+    report[DS_OUT_VALID_FLAG0] = DS_OUTPUT_VALID0_RUMBLE | DS_OUTPUT_VALID0_HAPTICS;
+    report[DS_OUT_VALID_FLAG1] = DS_OUTPUT_VALID1_LIGHTBAR | DS_OUTPUT_VALID1_PLAYER_LEDS;
     
-    report[5] = right_motor;             // Right rumble
-    report[6] = left_motor;              // Left rumble
+    // Rumble motors
+    report[DS_OUT_MOTOR_RIGHT] = right_motor;
+    report[DS_OUT_MOTOR_LEFT] = left_motor;
     
-    report[41] = 0x02;                   // Lightbar setup
-    report[43] = 0xFF;                   // Brightness
-    report[44] = player_leds;            // Player LEDs
-    report[45] = led_r;
-    report[46] = led_g;
-    report[47] = led_b;
+    // Lightbar control
+    report[DS_OUT_VALID_FLAG2] = DS_OUTPUT_VALID2_LIGHTBAR_SETUP;
+    report[DS_OUT_LIGHTBAR_SETUP] = 0x02;  // Enable lightbar fade-in
+    report[DS_OUT_LED_BRIGHTNESS] = 0xFF;  // Full brightness
+    report[DS_OUT_PLAYER_LEDS] = player_leds;
+    report[DS_OUT_LIGHTBAR_RED] = led_r;
+    report[DS_OUT_LIGHTBAR_GREEN] = led_g;
+    report[DS_OUT_LIGHTBAR_BLUE] = led_b;
     
-    // Calculate CRC32 (BT reports need seed byte 0xA2 prepended)
+    // Calculate CRC32
+    // For BT output reports, CRC is calculated over: 0xA2 seed byte + report[0..73]
     uint8_t crc_buf[75];
-    crc_buf[0] = 0xA2;
+    crc_buf[0] = 0xA2;  // Output report seed
     memcpy(&crc_buf[1], report, 74);
     uint32_t crc = dualsense_calc_crc32(crc_buf, 75);
     
+    // Store CRC at end (little-endian)
     report[74] = (crc >> 0) & 0xFF;
     report[75] = (crc >> 8) & 0xFF;
     report[76] = (crc >> 16) & 0xFF;
     report[77] = (crc >> 24) & 0xFF;
     
     if (fd >= 0) {
-        write(fd, report, sizeof(report));
+        ssize_t written = write(fd, report, sizeof(report));
+        if (written < 0) {
+            static int err_count = 0;
+            if (++err_count <= 5) {
+                printf("[DualSense] Output write error: %s\n", strerror(errno));
+            }
+        }
     }
 }
 
@@ -200,6 +277,71 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
     uint8_t buttons1 = buf[DS_OFF_BUTTONS1];
     uint8_t buttons2 = buf[DS_OFF_BUTTONS2];
     uint8_t buttons3 = buf[DS_OFF_BUTTONS3];
+    
+    // Process touchpad-as-R3 if enabled and touchpad data is available
+    // Touchpad data is at offset 34 in BT report (verified via debug comparison)
+    #define DS_OFF_TOUCHPAD_BT 34
+    
+    if (g_touchpad_as_r3 && len >= DS_OFF_TOUCHPAD_BT + 4) {
+        const uint8_t* touch = &buf[DS_OFF_TOUCHPAD_BT];
+        uint8_t contact = touch[0];
+        int touch_active = !(contact & DS_TOUCH_INACTIVE);
+        
+        if (touch_active) {
+            // Extract 12-bit X and Y coordinates
+            int touch_x = touch[1] | ((touch[2] & 0x0F) << 8);
+            int touch_y = (touch[2] >> 4) | (touch[3] << 4);
+            
+            // Sanity check - values should be within touchpad bounds
+            if (touch_x > DS_TOUCHPAD_WIDTH || touch_y > DS_TOUCHPAD_HEIGHT) {
+                // Invalid data, don't update - keep physical R3 values
+                // (rx and ry already have the physical stick values from above)
+            } else {
+                pthread_mutex_lock(&g_touchpad_mutex);
+                if (!g_touchpad_state.active) {
+                    // First touch - record initial position as the "virtual center"
+                    g_touchpad_state.active = 1;
+                    g_touchpad_state.initial_x = touch_x;
+                    g_touchpad_state.initial_y = touch_y;
+                }
+                g_touchpad_state.current_x = touch_x;
+                g_touchpad_state.current_y = touch_y;
+                
+                // Calculate delta from initial touch position
+                int delta_x = touch_x - g_touchpad_state.initial_x;
+                int delta_y = touch_y - g_touchpad_state.initial_y;
+                pthread_mutex_unlock(&g_touchpad_mutex);
+                
+                // Scale touchpad delta to stick range
+                // Touchpad is 1920x1080, higher sensitivity value = slower movement
+                // 400 means ~400 pixels of movement = full stick deflection
+                int sensitivity = 400;
+                
+                int stick_x = 128 + (delta_x * 127) / sensitivity;
+                int stick_y = 128 + (delta_y * 127) / sensitivity;
+                
+                // Clamp to valid range [0, 255]
+                if (stick_x < 0) stick_x = 0;
+                else if (stick_x > 255) stick_x = 255;
+                if (stick_y < 0) stick_y = 0;
+                else if (stick_y > 255) stick_y = 255;
+                
+                // Override right stick with touchpad values
+                rx = (uint8_t)stick_x;
+                ry = (uint8_t)stick_y;
+            }
+        } else {
+            // Touch not active - reset state and let physical R3 work
+            pthread_mutex_lock(&g_touchpad_mutex);
+            if (g_touchpad_state.active) {
+                g_touchpad_state.active = 0;
+            }
+            pthread_mutex_unlock(&g_touchpad_mutex);
+            
+            // DON'T override rx/ry here - keep the physical stick values
+            // that were read at the start of this function
+        }
+    }
     
     // Convert to DS3 format
     uint8_t ds3_btn1 = 0;  // Select, L3, R3, Start, D-pad
@@ -232,8 +374,10 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
     // PS button (buttons3)
     if (buttons3 & DS_BTN3_PS) ds3_ps = DS3_BTN_PS;
     
-    // Touchpad click -> Select (alternate)
-    if (buttons3 & DS_BTN3_TOUCHPAD) ds3_btn1 |= DS3_BTN_SELECT;
+    // Touchpad click -> Select (alternate) - only if not using touchpad as R3
+    if (!g_touchpad_as_r3 && (buttons3 & DS_BTN3_TOUCHPAD)) {
+        ds3_btn1 |= DS3_BTN_SELECT;
+    }
     
     // Button pressure (full press = 0xFF)
     uint8_t triangle_p = (buttons1 & DS_BTN1_TRIANGLE) ? 0xFF : 0;
@@ -265,6 +409,10 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
         int16_t ds3_accel_y = 512 + (ds_accel_y / 16);
         int16_t ds3_accel_z = 512 + (ds_accel_z / 16);
         int16_t ds3_gyro_z  = 498 + (ds_gyro_z / 32);  // DS3 only has Z gyro
+        
+        // Suppress unused variable warnings
+        (void)ds_gyro_x;
+        (void)ds_gyro_y;
         
         ds3_update_motion(ds3_accel_x, ds3_accel_y, ds3_accel_z, ds3_gyro_z);
     }
@@ -349,56 +497,48 @@ void* dualsense_thread(void* arg) {
 void* dualsense_output_thread(void* arg) {
     (void)arg;
     
-    uint8_t last_right = 0;
-    uint8_t last_left = 0;
-    lightbar_state_t last_lightbar = {0, 0, 0, 0, 0};
-    int update_counter = 0;
-    
     printf("[DualSense] Output thread started\n");
     
+    uint8_t last_right = 0, last_left = 0;
+    lightbar_state_t last_lightbar = {0, 0, 0, 0, 0};
+    int update_count = 0;
+    
     while (g_running) {
-        uint8_t right, left;
-        lightbar_state_t lb_state;
-        
-        // Get current rumble state
-        pthread_mutex_lock(&g_rumble_mutex);
-        right = g_rumble_right;
-        left = g_rumble_left;
-        pthread_mutex_unlock(&g_rumble_mutex);
-        
-        // Periodically check for lightbar IPC updates
-        if (++update_counter >= 10) {
-            update_counter = 0;
+        // Check for lightbar config changes periodically
+        if (++update_count >= 50) {  // Every ~500ms
+            update_count = 0;
             read_lightbar_state();
         }
         
+        // Get current rumble state
+        pthread_mutex_lock(&g_rumble_mutex);
+        uint8_t right = g_rumble_right;
+        uint8_t left = g_rumble_left;
+        pthread_mutex_unlock(&g_rumble_mutex);
+        
+        // Get current lightbar state
         pthread_mutex_lock(&g_lightbar_mutex);
-        lb_state = g_lightbar_state;
+        lightbar_state_t lightbar = g_lightbar_state;
         pthread_mutex_unlock(&g_lightbar_mutex);
         
-        // Check if we need to send an update
+        // Only send if something changed
         int rumble_changed = (right != last_right || left != last_left);
-        int lightbar_changed = (lb_state.r != last_lightbar.r ||
-                               lb_state.g != last_lightbar.g ||
-                               lb_state.b != last_lightbar.b ||
-                               lb_state.player_leds != last_lightbar.player_leds);
-        int rumble_active = (right > 0 || left > 0);
+        int lightbar_changed = (lightbar.r != last_lightbar.r ||
+                                lightbar.g != last_lightbar.g ||
+                                lightbar.b != last_lightbar.b ||
+                                lightbar.player_leds != last_lightbar.player_leds);
         
-        if (g_hidraw_fd >= 0 && (rumble_changed || lightbar_changed || rumble_active)) {
+        if (g_hidraw_fd >= 0 && (rumble_changed || lightbar_changed)) {
             dualsense_send_output(g_hidraw_fd, right, left,
-                                 lb_state.r, lb_state.g, lb_state.b,
-                                 lb_state.player_leds);
+                                  lightbar.r, lightbar.g, lightbar.b,
+                                  lightbar.player_leds);
+            
             last_right = right;
             last_left = left;
-            last_lightbar = lb_state;
+            last_lightbar = lightbar;
         }
         
-        usleep(10000);  // 10ms update rate
-    }
-    
-    // Clear outputs on shutdown
-    if (g_hidraw_fd >= 0) {
-        dualsense_send_output(g_hidraw_fd, 0, 0, 0, 0, 0, 0);
+        usleep(10000);  // 100Hz output rate
     }
     
     return NULL;

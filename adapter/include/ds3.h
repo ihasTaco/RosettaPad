@@ -169,6 +169,14 @@ void ds3_update_report(
 void ds3_update_motion(int16_t accel_x, int16_t accel_y, int16_t accel_z, int16_t gyro_z);
 
 /**
+ * Update battery status from DualSense battery level
+ * Converts DualSense battery percentage to DS3 format
+ * @param ds_battery_level DualSense battery level (0-100)
+ * @param ds_charging 1 if charging, 0 if not
+ */
+void ds3_update_battery_from_dualsense(uint8_t ds_battery_level, int ds_charging);
+
+/**
  * Copy current DS3 report to buffer (thread-safe)
  * @param out_buf Buffer to copy to (must be DS3_INPUT_REPORT_SIZE bytes)
  */
