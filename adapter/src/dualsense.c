@@ -278,6 +278,24 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
     uint8_t buttons2 = buf[DS_OFF_BUTTONS2];
     uint8_t buttons3 = buf[DS_OFF_BUTTONS3];
     
+    // Apply deadzone to sticks (center is 128, deadzone of ±6)
+    // This prevents drift and jitter near center
+    #define STICK_CENTER 128
+    #define STICK_DEADZONE 6
+    
+    if (lx >= STICK_CENTER - STICK_DEADZONE && lx <= STICK_CENTER + STICK_DEADZONE) {
+        lx = STICK_CENTER;
+    }
+    if (ly >= STICK_CENTER - STICK_DEADZONE && ly <= STICK_CENTER + STICK_DEADZONE) {
+        ly = STICK_CENTER;
+    }
+    if (rx >= STICK_CENTER - STICK_DEADZONE && rx <= STICK_CENTER + STICK_DEADZONE) {
+        rx = STICK_CENTER;
+    }
+    if (ry >= STICK_CENTER - STICK_DEADZONE && ry <= STICK_CENTER + STICK_DEADZONE) {
+        ry = STICK_CENTER;
+    }
+    
     // Process touchpad-as-R3 if enabled and touchpad data is available
     // Touchpad data is at offset 34 in BT report (verified via debug comparison)
     #define DS_OFF_TOUCHPAD_BT 34
@@ -402,8 +420,8 @@ int dualsense_process_input(const uint8_t* buf, size_t len) {
         
         // Convert to DS3 format (centered around ~512 for accel, ~498 for gyro)
         // DualSense has different scaling, so we need to convert
-        // DS3 accel: ~512 at rest, Â±~400 range
-        // DualSense accel: ~0 at rest (after bias), Â±~8192 range
+        // DS3 accel: ~512 at rest, Ã‚Â±~400 range
+        // DualSense accel: ~0 at rest (after bias), Ã‚Â±~8192 range
         
         int16_t ds3_accel_x = 512 + (ds_accel_x / 16);
         int16_t ds3_accel_y = 512 + (ds_accel_y / 16);

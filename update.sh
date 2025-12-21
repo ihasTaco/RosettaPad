@@ -54,7 +54,7 @@ if gcc -O2 -Wall -Wextra \
     -I"$INSTALL_DIR/include" \
     -o "$INSTALL_DIR/rosettapad" \
     $SRC_FILES \
-    -lpthread; then
+    -lpthread -lbluetooth; then
     echo "  Compilation successful!"
 else
     echo "  Compilation failed!"

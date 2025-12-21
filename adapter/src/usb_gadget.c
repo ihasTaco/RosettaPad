@@ -333,6 +333,11 @@ void* usb_control_thread(void* arg) {
                 g_running = 0;
                 break;
                 
+            case FUNCTIONFS_SUSPEND:
+                printf("[USB] *** SUSPEND - USB cable unplugged ***\n");
+                g_usb_enabled = 0;
+                break;
+                
             default:
                 printf("[USB] Event type=%d\n", event.type);
                 break;

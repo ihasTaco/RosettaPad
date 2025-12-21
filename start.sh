@@ -17,10 +17,12 @@ fi
 
 # Create build directory
 mkdir -p "$BUILD_DIR"
+mkdir -p /tmp/rosettapad
 
 echo "[1/3] Loading kernel modules..."
 sudo modprobe libcomposite
 sudo modprobe usb_f_fs
+sudo rfkill unblock bluetooth 2>/dev/null || true
 
 echo "[2/3] Compiling..."
 SRC_FILES=$(find "$SCRIPT_DIR/adapter/src" -name "*.c" | tr '\n' ' ')
@@ -29,7 +31,7 @@ gcc -O2 -Wall -Wextra -g \
     -I"$SCRIPT_DIR/adapter/include" \
     -o "$BUILD_DIR/rosettapad" \
     $SRC_FILES \
-    -lpthread
+    -lpthread -lbluetooth
 
 echo "  Compiled to $BUILD_DIR/rosettapad"
 
