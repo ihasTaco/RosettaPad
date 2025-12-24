@@ -2,7 +2,7 @@
  * RosettaPad - DualSense to PS3 Controller Adapter
  * Main entry point
  * 
- * v0.5 - Automatic Bluetooth MAC configuration
+ * v0.8 - Standby disconnects controller (saves battery), wake on reconnect
  * 
  * Architecture:
  *   - common.c/h    : Shared state and utilities
@@ -41,16 +41,17 @@ static void signal_handler(int sig) {
 // =================================================================
 static void print_banner(void) {
     printf("\n");
-    printf("╔═══════════════════════════════════════════════════════════╗\n");
-    printf("║                     RosettaPad v0.5                       ║\n");
-    printf("║            DualSense to PS3 Controller Adapter            ║\n");
-    printf("╠═══════════════════════════════════════════════════════════╣\n");
-    printf("║  Modules:                                                 ║\n");
-    printf("║    • DS3 Emulation    - PlayStation 3 protocol            ║\n");
-    printf("║    • DualSense Input  - PS5 controller via Bluetooth      ║\n");
-    printf("║    • USB Gadget       - FunctionFS to PS3                 ║\n");
-    printf("║    • Bluetooth HID    - Motion controls & PS3 wake        ║\n");
-    printf("╚═══════════════════════════════════════════════════════════╝\n");
+    printf("============================================================\n");
+    printf("                     RosettaPad v0.8                        \n");
+    printf("           DualSense to PS3 Controller Adapter              \n");
+    printf("============================================================\n");
+    printf("  Modules:                                                  \n");
+    printf("    - DS3 Emulation    : PlayStation 3 protocol             \n");
+    printf("    - DualSense Input  : PS5 controller via Bluetooth       \n");
+    printf("    - USB Gadget       : FunctionFS to PS3                  \n");
+    printf("    - Bluetooth HID    : Motion controls & PS3 wake         \n");
+    printf("    - Standby Mode     : Controller off, wake on reconnect  \n");
+    printf("============================================================\n");
     printf("\n");
 }
 
@@ -62,7 +63,7 @@ int main(int argc, char* argv[]) {
     (void)argv;
     
     pthread_t ds_input_tid;
-    pthread_t ds_output_tid;
+    pthread_t ctrl_output_tid;
     pthread_t usb_ctrl_tid;
     pthread_t usb_in_tid;
     pthread_t usb_out_tid;
@@ -113,7 +114,7 @@ int main(int argc, char* argv[]) {
     printf("[Main] Starting threads...\n");
     
     pthread_create(&ds_input_tid, NULL, dualsense_thread, NULL);
-    pthread_create(&ds_output_tid, NULL, dualsense_output_thread, NULL);
+    pthread_create(&ctrl_output_tid, NULL, controller_output_thread, NULL);
     pthread_create(&usb_ctrl_tid, NULL, usb_control_thread, NULL);
     pthread_create(&usb_in_tid, NULL, usb_input_thread, NULL);
     pthread_create(&usb_out_tid, NULL, usb_output_thread, NULL);
@@ -127,12 +128,12 @@ int main(int argc, char* argv[]) {
     }
     
     printf("\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("============================================================\n");
     printf("  Adapter running! Press Ctrl+C to stop.\n");
     printf("  \n");
-    printf("  Motion controls: Will auto-connect via Bluetooth when PS3\n");
-    printf("                   reads Report 0xF5 (contains Pi's BT MAC)\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("  Standby: When PS3 powers off, controller disconnects.\n");
+    printf("           Turn controller back on to wake PS3.\n");
+    printf("============================================================\n");
     printf("\n");
     fflush(stdout);
     

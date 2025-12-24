@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <linux/sockios.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
 #include <bluetooth/hci.h>
@@ -397,32 +398,40 @@ static int create_l2cap_socket(uint16_t psm, const bdaddr_t* dest) {
         return -1;
     }
     
-    // Set socket to non-blocking for better control
-    int flags = fcntl(sock, F_GETFL, 0);
-    // Don't set non-blocking yet - need blocking for connect()
-    
     // Set socket options for minimal latency
     int priority = 6;  // High priority (0-6, 6 is highest)
     setsockopt(sock, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority));
     
-    // Minimize send buffer - we want to detect "full" immediately
-    // Set to just enough for 1-2 packets
-    int sndbuf = 128;  // Very small - just over one 50-byte packet
+    // MINIMIZE send buffer - ask for 0, get kernel minimum
+    int sndbuf = 0;
     setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
     
-    // Also minimize receive buffer
-    int rcvbuf = 256;
+    // Check what we actually got
+    socklen_t buflen = sizeof(sndbuf);
+    getsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, &buflen);
+    printf("[BT] Actual SO_SNDBUF: %d bytes\n", sndbuf);
+    
+    // Minimize receive buffer too
+    int rcvbuf = 0;
     setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
     
-    // Set L2CAP options for HID
+    // Disable linger - discard unsent data on close
+    struct linger ling = {1, 0};
+    setsockopt(sock, SOL_SOCKET, SO_LINGER, &ling, sizeof(ling));
+    
+    // Set L2CAP options for HID - AGGRESSIVE flush to kill buffered data
     struct l2cap_options opts = {0};
     socklen_t optlen = sizeof(opts);
     if (getsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &opts, &optlen) == 0) {
-        opts.omtu = 64;       // Output MTU - small for HID
+        opts.omtu = 50;       // Output MTU - exactly one HID report size
         opts.imtu = 64;       // Input MTU
-        opts.flush_to = 0xFFFF;  // Flush timeout (0xFFFF = no flush, reliable)
+        opts.flush_to = 1;    // Flush timeout = 1 slot (0.625ms)!
+                              // This tells BT stack to DISCARD packets that can't
+                              // be sent within 0.625ms - prevents buffer buildup
         opts.mode = L2CAP_MODE_BASIC;
-        setsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &opts, sizeof(opts));
+        if (setsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &opts, sizeof(opts)) == 0) {
+            printf("[BT] L2CAP flush_to=1 (0.625ms) - stale packets will be dropped\n");
+        }
     }
     
     // Short timeouts for connect
@@ -647,21 +656,7 @@ int bt_hid_process_control(void) {
 // Interrupt Channel
 // =================================================================
 
-// Flow control: only allow one packet in flight at a time
-// This prevents kernel buffer from queuing stale data
-static volatile int g_packet_in_flight = 0;
 static uint64_t g_last_send_time = 0;
-static uint8_t g_last_sent_report[49] = {0};  // Track last actually sent report
-
-// Debug: track when deflection started to measure total deflection time
-static uint64_t g_rx_deflect_start = 0;
-static int g_rx_was_centered = 1;
-static int g_rx_packets_while_deflected = 0;
-
-// Simple center check for debug tracking
-static int stick_is_centered_debug(uint8_t value) {
-    return (value >= 118 && value <= 138);  // Within Â±10 of 128
-}
 
 int bt_hid_send_input(void) {
     if (g_bt_ctx.state != BT_STATE_ENABLED || g_bt_ctx.intr_sock < 0) {
@@ -670,100 +665,62 @@ int bt_hid_send_input(void) {
     
     uint64_t now = get_time_ms();
     
-    // Get current report
+    // Safety valve: if we've been connected for a while and drops are accumulating,
+    // the buffer might be filling up. Track consecutive drops.
+    static int consecutive_drops = 0;
+    static uint64_t last_success_time = 0;
+    
+    if (last_success_time == 0) {
+        last_success_time = now;
+    }
+    
+    // If we haven't successfully sent in 500ms, something is wrong - buffer is full
+    // This shouldn't happen with flush_to=1, but just in case
+    if (now - last_success_time > 500 && consecutive_drops > 10) {
+        printf("[BT] Buffer appears stuck (%d consecutive drops), will reconnect\n", consecutive_drops);
+        // Signal need for reconnect by returning error
+        consecutive_drops = 0;
+        return -1;
+    }
+    
+    // Fixed 40ms interval (~25Hz) - match PS3 SNIFF mode rate
+    if (now - g_last_send_time < 40) {
+        return 0;
+    }
+    
+    // Get CURRENT state right before sending
     uint8_t current_report[49];
     ds3_copy_report(current_report);
-    
-    // Debug: Track RX stick deflection timing (no modification, just logging)
-    int rx_centered_now = stick_is_centered_debug(current_report[DS3_OFF_RX]);
-    if (g_rx_was_centered && !rx_centered_now) {
-        // Just started deflecting
-        g_rx_deflect_start = now;
-        g_rx_packets_while_deflected = 0;
-        printf("[STICK-DBG] RX deflection START at %llu, value=%d\n", 
-               (unsigned long long)now, current_report[DS3_OFF_RX]);
-    } else if (!g_rx_was_centered && rx_centered_now) {
-        // Just returned to center
-        uint64_t deflect_duration = now - g_rx_deflect_start;
-        printf("[STICK-DBG] RX deflection END after %llums, %d packets sent while deflected\n",
-               (unsigned long long)deflect_duration, g_rx_packets_while_deflected);
-    }
-    g_rx_was_centered = rx_centered_now;
-    
-    // Check what changed - compare buttons AND sticks
-    int buttons_changed = (current_report[DS3_OFF_BUTTONS1] != g_last_sent_report[DS3_OFF_BUTTONS1] ||
-                           current_report[DS3_OFF_BUTTONS2] != g_last_sent_report[DS3_OFF_BUTTONS2] ||
-                           current_report[DS3_OFF_PS_BUTTON] != g_last_sent_report[DS3_OFF_PS_BUTTON]);
-    
-    // Check for significant stick change (any movement worth reporting)
-    int stick_changed = (abs((int)current_report[DS3_OFF_LX] - (int)g_last_sent_report[DS3_OFF_LX]) > 2 ||
-                         abs((int)current_report[DS3_OFF_LY] - (int)g_last_sent_report[DS3_OFF_LY]) > 2 ||
-                         abs((int)current_report[DS3_OFF_RX] - (int)g_last_sent_report[DS3_OFF_RX]) > 2 ||
-                         abs((int)current_report[DS3_OFF_RY] - (int)g_last_sent_report[DS3_OFF_RY]) > 2);
-    
-    int anything_changed = buttons_changed || stick_changed;
-    
-    // Flow control: wait for previous packet to be accepted before sending another
-    if (g_packet_in_flight) {
-        uint64_t elapsed = now - g_last_send_time;
-        
-        // Uniform 40ms timing for all inputs
-        if (elapsed < 35) {
-            if (anything_changed) {
-                g_bt_ctx.packets_dropped++;
-            }
-            return 0;
-        }
-        g_packet_in_flight = 0;
-    }
-    
-    // Don't send if nothing changed and it's been less than 50ms (keepalive)
-    if (!anything_changed && (now - g_last_send_time) < 50) {
-        return 0;
-    }
-    
-    // Check socket is ready
-    struct pollfd pfd = {
-        .fd = g_bt_ctx.intr_sock,
-        .events = POLLOUT
-    };
-    
-    if (poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLOUT)) {
-        if (anything_changed) {
-            g_bt_ctx.packets_dropped++;
-        }
-        return 0;
-    }
     
     uint8_t report[50];
     report[0] = BT_HIDP_DATA_RTYPE_INPUT;  // 0xA1
     memcpy(&report[1], current_report, 49);
     
     // Override status bytes for Bluetooth connection
-    report[30] = 0x03;  // DS3_STATUS_UNPLUGGED
-    report[31] = 0x05;  // DS3_BATTERY_FULL
-    report[32] = 0x16;  // DS3_CONN_BT
+    // Read from shared state (populated by controller module)
+    bt_status_t bt_status;
+    bt_status_get(&bt_status);
+    report[30] = bt_status.plugged_status;
+    report[31] = bt_status.battery_status;
+    report[32] = bt_status.connection_type;
     
     ssize_t sent = send(g_bt_ctx.intr_sock, report, sizeof(report), MSG_DONTWAIT | MSG_NOSIGNAL);
+    
+    // Always update time
+    g_last_send_time = now;
     
     if (sent < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             g_bt_ctx.packets_dropped++;
+            consecutive_drops++;
             return 0;
         }
         return -1;
     }
     
-    // Debug: count packets sent while stick is deflected
-    if (!g_rx_was_centered) {
-        g_rx_packets_while_deflected++;
-    }
-    
-    // Update last sent state
-    memcpy(g_last_sent_report, current_report, 49);
-    
-    g_packet_in_flight = 1;
-    g_last_send_time = now;
+    // Success - reset drop counter
+    consecutive_drops = 0;
+    last_success_time = now;
     g_bt_ctx.packets_sent++;
     return 0;
 }
@@ -786,22 +743,48 @@ static int process_interrupt_input(void) {
         return -1;
     }
     
-    // Debug: log received data
+    // Debug: log all received packets
     static int intr_rx_count = 0;
-    if (++intr_rx_count <= 10 || intr_rx_count % 100 == 0) {
-        printf("[BT] INTR RX (%zd): %02X %02X %02X %02X %02X %02X...\n",
-               n, buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
+    intr_rx_count++;
+    
+    // Always log output reports (A2), but limit other messages
+    if (buf[0] == BT_HIDP_DATA_RTYPE_OUTPUT) {
+        printf("[BT] INTR RX OUTPUT (%zd bytes):", n);
+        for (ssize_t i = 0; i < n && i < 16; i++) {
+            printf(" %02X", buf[i]);
+        }
+        printf("\n");
+    } else if (intr_rx_count <= 10 || intr_rx_count % 100 == 0) {
+        printf("[BT] INTR RX type=0x%02X (%zd bytes)\n", buf[0], n);
     }
     
-    // Output report: A2 01 [rumble data]
-    if (n >= 6 && buf[0] == BT_HIDP_DATA_RTYPE_OUTPUT) {
-        uint8_t right_power = buf[3];
-        uint8_t left_power = buf[5];
+    // Output report: A2 01 XX [rumble data]
+    // Format: [0]=0xA2 trans, [1]=0x01 report_id, [2]=pad,
+    //         [3]=weak_duration, [4]=weak_power, [5]=strong_duration, [6]=strong_power
+    if (n >= 7 && buf[0] == BT_HIDP_DATA_RTYPE_OUTPUT && buf[1] == 0x01) {
+        uint8_t weak_duration = buf[3];
+        uint8_t weak_power = buf[4];    // Weak motor: 0 or 1 (on/off)
+        uint8_t strong_duration = buf[5];
+        uint8_t strong_power = buf[6];  // Strong motor: 0-255
         
-        uint8_t ds_right = right_power ? 0xFF : 0x00;
-        uint8_t ds_left = left_power;
+        printf("[BT] Rumble parsed: weak_dur=%d weak_pwr=%d strong_dur=%d strong_pwr=%d\n",
+               weak_duration, weak_power, strong_duration, strong_power);
+        
+        // Convert to DualSense format
+        // Weak motor (right) = binary on/off -> full strength if on
+        // Strong motor (left) = variable intensity
+        uint8_t ds_right = weak_power ? 0xFF : 0x00;
+        uint8_t ds_left = strong_power;
         
         pthread_mutex_lock(&g_rumble_mutex);
+        // Only log if values changed
+        static uint8_t last_right = 0, last_left = 0;
+        if (ds_right != last_right || ds_left != last_left) {
+            printf("[BT] Rumble CHANGED: ds_right=%d ds_left=%d (was %d/%d)\n", 
+                   ds_right, ds_left, last_right, last_left);
+            last_right = ds_right;
+            last_left = ds_left;
+        }
         g_rumble_right = ds_right;
         g_rumble_left = ds_left;
         pthread_mutex_unlock(&g_rumble_mutex);
@@ -983,6 +966,12 @@ int bt_hid_connect(void) {
 void bt_hid_disconnect(void) {
     printf("[BT] Disconnecting...\n");
     
+    // Clear rumble state on disconnect
+    pthread_mutex_lock(&g_rumble_mutex);
+    g_rumble_right = 0;
+    g_rumble_left = 0;
+    pthread_mutex_unlock(&g_rumble_mutex);
+    
     if (g_bt_ctx.intr_sock >= 0) {
         close(g_bt_ctx.intr_sock);
         g_bt_ctx.intr_sock = -1;
@@ -1007,20 +996,47 @@ bt_state_t bt_hid_get_state(void) {
 int bt_hid_wake_ps3(void) {
     printf("[BT] Attempting to wake PS3...\n");
     
-    if (g_bt_ctx.state == BT_STATE_DISCONNECTED) {
-        if (bt_hid_connect() < 0) {
-            return -1;
+    // PS3 in standby mode listens for connection attempts from paired controllers
+    // We need to retry the connection - PS3 uses the connection attempt itself as wake trigger
+    int max_attempts = 5;
+    int attempt;
+    
+    for (attempt = 0; attempt < max_attempts; attempt++) {
+        printf("[BT] Wake attempt %d/%d...\n", attempt + 1, max_attempts);
+        
+        // Disconnect if we're in an error state
+        if (g_bt_ctx.state == BT_STATE_ERROR) {
+            bt_hid_disconnect();
+        }
+        
+        if (g_bt_ctx.state == BT_STATE_DISCONNECTED) {
+            if (bt_hid_connect() == 0) {
+                // Connection succeeded! PS3 is awake
+                printf("[BT] Connection succeeded on attempt %d - PS3 is awake!\n", attempt + 1);
+                break;
+            }
+            // Connection failed - PS3 might still be waking up
+            // The connection attempt itself may have triggered wake
+            printf("[BT] Connection attempt %d failed, PS3 may be waking...\n", attempt + 1);
+        }
+        
+        // Wait before retry - PS3 needs time to wake its BT radio
+        if (attempt < max_attempts - 1) {
+            usleep(1500000);  // 1.5 seconds between attempts
         }
     }
     
+    // Wait for connection to be ready
     for (int i = 0; i < 30 && g_bt_ctx.state < BT_STATE_READY; i++) {
         usleep(100000);
     }
     
     if (g_bt_ctx.intr_sock < 0) {
+        printf("[BT] Wake failed - could not establish connection after %d attempts\n", max_attempts);
         return -1;
     }
     
+    // Send PS button press to complete wake
     uint8_t wake_report[50] = {0};
     wake_report[0] = BT_HIDP_DATA_RTYPE_INPUT;
     wake_report[1] = 0x01;
@@ -1036,13 +1052,14 @@ int bt_hid_wake_ps3(void) {
     wake_report[5] = 0;
     send(g_bt_ctx.intr_sock, wake_report, sizeof(wake_report), 0);
     
-    printf("[BT] Wake signal sent\n");
+    printf("[BT] Wake signal sent successfully\n");
     return 0;
 }
 
 // =================================================================
 // Thread Functions
 // =================================================================
+
 
 void* bt_hid_thread(void* arg) {
     (void)arg;
@@ -1057,6 +1074,13 @@ void* bt_hid_thread(void* arg) {
     int tried_auto_connect = 0; // Track if we tried auto-connect on startup
     
     while (g_running) {
+        // Check if we're in standby mode - don't try to connect to PS3
+        if (system_is_standby()) {
+            // In standby, just wait - don't try to connect to PS3
+            usleep(100000);  // 100ms
+            continue;
+        }
+        
         switch (g_bt_ctx.state) {
             case BT_STATE_DISCONNECTED:
                 // Track USB connection state
@@ -1070,32 +1094,44 @@ void* bt_hid_thread(void* arg) {
                 }
                 
                 // Auto-connect on startup if we have saved PS3 MAC and USB is not connected
-                if (!tried_auto_connect && !g_usb_enabled && !connect_requested && bt_hid_has_ps3_addr()) {
+                // BUT NOT if we're in standby mode
+                if (!tried_auto_connect && !g_usb_enabled && !connect_requested && 
+                    bt_hid_has_ps3_addr() && !system_is_standby()) {
                     tried_auto_connect = 1;
                     printf("[BT] Found saved PS3 MAC, attempting Bluetooth connection...\n");
                     
                     // Brief delay for system to settle on startup
                     usleep(500000);  // 500ms
                     
-                    // Check USB didn't connect while we waited
-                    if (!g_usb_enabled) {
+                    // Check USB didn't connect while we waited AND we're not in standby
+                    if (!g_usb_enabled && !system_is_standby()) {
                         if (bt_hid_connect() == 0) {
                             connect_requested = 1;
                             retry_count = 0;
                         } else {
-                            printf("[BT] Auto-connect failed, will retry when USB disconnects\n");
+                            // PS3 appears to be off - enter standby mode
+                            // This allows PS button wake to work on fresh boot
+                            printf("[BT] Auto-connect failed (PS3 likely off), entering standby mode\n");
+                            system_enter_standby();
                         }
                     }
                 }
                 
                 // Connect BT after USB disconnects (user unplugged cable)
+                // BUT NOT if we're in standby mode (PS3 is off)
                 // This mimics real DS3 behavior
-                // Note: g_usb_enabled goes false on DISABLE, but SUSPEND (type 5) may come first
-                if (was_usb_connected && !g_usb_enabled && !connect_requested && ds3_has_ps3_mac()) {
+                if (was_usb_connected && !g_usb_enabled && !connect_requested && 
+                    ds3_has_ps3_mac() && !system_is_standby()) {
                     printf("[BT] USB disconnected, initiating Bluetooth connection...\n");
                     
                     // Brief delay to let PS3 notice USB disconnect
                     usleep(200000);  // 200ms
+                    
+                    // Double-check standby state after delay
+                    if (system_is_standby()) {
+                        printf("[BT] Entered standby mode, skipping BT connection\n");
+                        break;
+                    }
                     
                     if (bt_hid_connect() == 0) {
                         connect_requested = 1;
@@ -1191,19 +1227,21 @@ void* bt_motion_thread(void* arg) {
     
     printf("[BT] Motion thread started\n");
     
-    int motion_sent_count = 0;
     uint64_t last_log_time = 0;
     int sends_this_second = 0;
     int drops_this_second = 0;
-    uint32_t last_sent = 0;
-    uint32_t last_dropped = 0;
     
     while (g_running) {
+        // Don't send data in standby mode
+        if (system_is_standby()) {
+            usleep(100000);  // 100ms - slow poll while in standby
+            continue;
+        }
+        
         if (g_bt_ctx.state == BT_STATE_ENABLED) {
             uint32_t before_sent = g_bt_ctx.packets_sent;
             uint32_t before_dropped = g_bt_ctx.packets_dropped;
             
-            // Try to send - will only succeed if socket ready AND no packet in flight
             bt_hid_send_input();
             
             if (g_bt_ctx.packets_sent > before_sent) {
@@ -1216,22 +1254,17 @@ void* bt_motion_thread(void* arg) {
             // Log actual throughput every second
             uint64_t now = get_time_ms();
             if (now - last_log_time >= 1000) {
-                uint32_t total_sent = g_bt_ctx.packets_sent;
-                uint32_t total_dropped = g_bt_ctx.packets_dropped;
-                
                 printf("[BT] Throughput: %d/sec sent, %d/sec dropped (total: %u sent, %u dropped)\n",
                        sends_this_second, drops_this_second,
-                       total_sent, total_dropped);
+                       g_bt_ctx.packets_sent, g_bt_ctx.packets_dropped);
                 
                 sends_this_second = 0;
                 drops_this_second = 0;
                 last_log_time = now;
-                last_sent = total_sent;
-                last_dropped = total_dropped;
             }
         }
         
-        // Poll very frequently to catch socket ready ASAP
+        // Poll very frequently to catch socket ready ASAP (same as your original)
         usleep(500);  // 0.5ms = 2000Hz polling
     }
     
