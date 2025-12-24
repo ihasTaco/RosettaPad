@@ -6,25 +6,21 @@ RosettaPad is a system that allows you to pair any (eventually) generic controll
 ## Features
 
 ### Progress
-- [ ] Full DS3 emulation
+- [x] Full DS3 emulation
   <details>
   <summary>Feature breakdown</summary>
 
   | Feature | Status | Notes |
   |---------|--------|-------|
-  | Face Buttons | ✅ | |
-  | D-Pad Buttons | ✅ | |
-  | Triggers (and pressure) | ✅ | |
-  | Shoulders | ✅ | |
-  | Start and Select | ✅ | |
-  | PS Button | ✅ | |
-  | Analog Sticks | ✅ | |
-  | Rumble | ➖ | Tested on PS3 games, need to verify PS2 mode compatibility |
-  | Acceleration & Gyro | ➖ | Acceleration and gyro do not work while connected through usb only. Will need to figure out a hybrid solution for this |
-  | Power Display | ✅ | Byte 30 controls battery status; need to wire DS5 battery to this |
+  | All buttons and analog sticks | ✅ | |
+  | USB Mode to PS3 | ✅ | |
+  | Bluetooth Mode to PS3 | ✅ | This mode introduces ~300ms of latency, but is required if you need accelerometer and gyro, usb mode is recommended. I believe porting this to Pico 2w will fix the buffer issue causing the latency, also there is a weird overshoot issue that happens randomly. |
+  | Rumble | ✅ | Tested on PS3 games, need to verify PS2 mode compatibility |
+  | Acceleration & Gyro | ✅ | Need to fix calibration |
+  | Power Display | ✅ | |
+  | Standby Wake | ✅ | |
   | Adaptive Triggers | ⬜ | This will not allow the dynamic adaptive triggers, just would be cool to have |
   | Touchpad as precision joystick | ✅ | |
-  | PS button to power on PS3 | ➖ | Standby wake only works while connected through bluetooth. will need to figure out a hybrid solution for this |
 
   </details>
 
@@ -67,16 +63,12 @@ RosettaPad is a system that allows you to pair any (eventually) generic controll
 - [ ] Test rumble on PS2 mode games
   - Heard that PS2 mode can break rumble on other generic controllers, the PS3 may be sending Dualshock 2 protocols.
 - [ ] Modularize HID reports (Enable easier integration of other generic controllers.)
-- [ ] Test setup on ESP32-S3 microcontrollers
-- [ ] Test setup on Raspberry Pi Pico 2w
-- [ ] Add DS3 and DS4 support
-- [ ] Add Xbox One, Series controller support(? This would be unholy...)
+- [ ] Port setup to Raspberry Pi Pico 2w
+- [ ] Add other controller support
 
 ### Future Endeavors
 - TAS system
   - Set up a TAS system that will let you import or record and playback controller inputs on real hardware.
-- Bluetooth Connectivity
-  - Was working on this to get accelerometer and ps standby wake to work, was able to get it working but introduced a huge amount of latency (about .88s which is pretty much unusable.) In its current form bluetooth is not recommended due to ps3 buffer limitations
 - PS4 / PS5 support
   - This would be cool to have just for the macro and button remapping, will need to look into a MITM setup for authorization from console to controller but should work. Will need a Sony PS4/5 controller 
 
@@ -98,17 +90,17 @@ That should be it for setup, but just in case see [Boot Configurations](#boot-co
 
 ### Manual Start
 ```bash
-sudo ds3-adapter
+sudo rosettapad
 ```
 
 ### As a Service
 ```bash
-sudo systemctl start ds3-adapter
-sudo systemctl stop ds3-adapter
-sudo systemctl status ds3-adapter
+sudo systemctl start rosettapad
+sudo systemctl stop rosettapad
+sudo systemctl status rosettapad
 
 # Enable at boot:
-sudo systemctl enable ds3-adapter
+sudo systemctl enable rosettapad
 ```
 
 ### Manually Pairing DualSense
@@ -198,12 +190,12 @@ Bytes 21-24:  Triangle, Circle, Cross, Square pressure (0x00-0xFF)
 Bytes 25-29:  Reserved
 Byte 30:      Charged (0xEF), Charging (0xEE), No Connection? (0xF0), Dead (0x00, 0x01, 0x02), 1 Bar (0x03), 2 Bar (0x04), 3 Bar (0x05)
 Bytes 31-35:  Reserved?
-Bytes 36-39:  Calibration? The numbers, Sony! What do they mean? (I *think* these bytes are some kind of flag for accelerometer and gyro, need more testing.)
+Bytes 36-39:  Calibration? The numbers, Sony! What do they mean?
 Byte 40 - 41: Accelerometer X Axis, LE 10bit unsigned
 Byte 42 - 43: Accelerometer Y Axis, LE 10bit unsigned
 Byte 44 - 45: Accelerometer Z Axis, LE 10bit unsigned
 Byte 46 - 47: Gyroscope, LE 10bit unsigned
-Byte 48:      ???? (This is always 0x02 on the 2 controllers I have to test)
+Byte 48:      ???? (This is almost always 0x02 on the 2 controllers I have to test)
 ```
 
 ### DualSense Bluetooth HID Report Format
@@ -231,16 +223,15 @@ Byte 11:    PS button (0x01), Touchpad (0x02), Mute (0x04)
 | L3/R3 | L3/R3 |
 | Options | Start |
 | Create | Select |
-| Touchpad | Select (alt) |
+| Touchpad | R3 anolog stick |
 | PS | PS |
 
 ## File Locations
 
 After installation:
-- `/opt/ds3-adapter/ds3_adapter` - Main executable
-- `/opt/ds3-adapter/ds3_adapter.c` - Source code
-- `/etc/systemd/system/ds3-adapter.service` - Systemd service
-- `/usr/local/bin/ds3-adapter` - Symlink to executable
+- `/opt/rosettapad/rosettapad` - Main executable
+- `/etc/systemd/system/rosettapad.service` - Systemd service
+- `/usr/local/bin/rosettapad` - Symlink to executable
 
 ## Troubleshooting
 
@@ -261,6 +252,6 @@ After installation:
 ## Credits & Attribution
 - [Eleccelerator](https://eleccelerator.com/wiki/index.php?title=DualShock_3)
 - [Torvalds](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-sony.c)
-- [Felis](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp) - Details how the PS3 tells the DS3 to turn on Sixaxis controls (also has some details on power reporting and what bytes 29 & 31 do.
+- [Felis](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp)
 
 If you use any of the protocol documentation or findings from this project, please provide attribution by linking back to this repository.
