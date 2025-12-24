@@ -29,7 +29,8 @@ rm -rf "$INSTALL_DIR"
 echo
 echo "=== Uninstall Complete ==="
 echo
-echo "Note: Boot config changes in /boot/firmware/config.txt were NOT removed."
-echo "If you want to disable USB gadget mode, manually remove:"
-echo "  - 'dtoverlay=dwc2,dr_mode=peripheral' from config.txt"
-echo "  - 'modules-load=dwc2' from cmdline.txt"
+echo "Note: Boot config changes were NOT removed."
+echo "To disable USB gadget mode, manually remove from config.txt:"
+echo "  - dtoverlay=dwc2,dr_mode=peripheral"
+echo "And from cmdline.txt:"
+echo "  - modules-load=dwc2"

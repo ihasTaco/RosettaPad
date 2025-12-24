@@ -1,78 +1,63 @@
-# RosettaPad - Makefile
-# Builds the modular DualSense to PS3 adapter
+# RosettaPad Makefile
+# ====================
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I./include
-LDFLAGS = -lpthread
+CFLAGS = -Wall -Wextra -O2 -pthread
+LDFLAGS = -pthread -lbluetooth
 
 # Directories
 SRC_DIR = src
 INC_DIR = include
 BUILD_DIR = build
-BIN_DIR = bin
 
-# Source files
-SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/common.c \
-       $(SRC_DIR)/ds3.c \
-       $(SRC_DIR)/dualsense.c \
-       $(SRC_DIR)/usb_gadget.c
+INCLUDES = -I$(INC_DIR)
 
-# Object files
+# =============================================================================
+# SOURCE FILES - Add new files here
+# =============================================================================
+
+SRCS = \
+    $(SRC_DIR)/core/common.c \
+    $(SRC_DIR)/controllers/controller_registry.c \
+    $(SRC_DIR)/controllers/dualsense/dualsense.c \
+    $(SRC_DIR)/console/ps3/ds3_emulation.c \
+    $(SRC_DIR)/console/ps3/usb_gadget.c \
+    $(SRC_DIR)/console/ps3/bt_hid.c \
+    $(SRC_DIR)/main.c
+
+# Object files (automatically derived from sources)
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
-# Target
-TARGET = $(BIN_DIR)/rosettapad
+# =============================================================================
+# TARGETS
+# =============================================================================
 
-# Default target
-all: dirs $(TARGET)
+.PHONY: all clean debug info help
 
-# Create directories
-dirs:
-	@mkdir -p $(BUILD_DIR) $(BIN_DIR)
+all: rosettapad
 
-# Link
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
-	@echo "Built: $@"
+rosettapad: $(OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+	@echo ""
+	@echo "Build complete: rosettapad"
+	@echo ""
 
-# Compile
+# Pattern rule: compile any .c to .o
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Clean
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	rm -rf $(BUILD_DIR) rosettapad
 
-# Install to system
-install: $(TARGET)
-	@echo "Installing to /opt/rosettapad..."
-	sudo mkdir -p /opt/rosettapad
-	sudo cp $(TARGET) /opt/rosettapad/
-	sudo ln -sf /opt/rosettapad/rosettapad /usr/local/bin/rosettapad
-	@echo "Installed!"
+debug: CFLAGS += -g -DDEBUG -O0
+debug: all
 
-# Development: build and run
-run: $(TARGET)
-	sudo $(TARGET)
-
-# Debug build
-debug: CFLAGS += -g -DDEBUG
-debug: clean all
-
-# Show module structure
 info:
-	@echo "RosettaPad Module Structure:"
-	@echo "  include/"
-	@echo "    common.h     - Shared state and types"
-	@echo "    ds3.h        - DS3 emulation interface"
-	@echo "    dualsense.h  - DualSense controller interface"
-	@echo "    usb_gadget.h - USB FunctionFS interface"
-	@echo "  src/"
-	@echo "    main.c       - Entry point, thread orchestration"
-	@echo "    common.c     - Global state definitions"
-	@echo "    ds3.c        - DS3 protocol implementation"
-	@echo "    dualsense.c  - DualSense BT communication"
-	@echo "    usb_gadget.c - USB gadget setup and threads"
+	@echo "Sources: $(SRCS)"
+	@echo "Objects: $(OBJS)"
 
-.PHONY: all dirs clean install run debug info
+help:
+	@echo "make        - Build rosettapad"
+	@echo "make clean  - Remove build files"
+	@echo "make debug  - Build with debug symbols"
