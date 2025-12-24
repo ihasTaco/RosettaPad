@@ -2,16 +2,20 @@
  * RosettaPad - DualSense to PS3 Controller Adapter
  * Main entry point
  * 
+ * v0.8 - Standby disconnects controller (saves battery), wake on reconnect
+ * 
  * Architecture:
  *   - common.c/h    : Shared state and utilities
  *   - ds3.c/h       : PS3/DualShock 3 emulation layer
  *   - dualsense.c/h : PS5/DualSense controller interface
  *   - usb_gadget.c/h: USB FunctionFS handling
+ *   - bt_hid.c/h    : Bluetooth HID for motion controls
  *   - main.c        : Thread orchestration and lifecycle
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -21,6 +25,7 @@
 #include "ds3.h"
 #include "dualsense.h"
 #include "usb_gadget.h"
+#include "bt_hid.h"
 
 // =================================================================
 // Signal Handler
@@ -36,15 +41,17 @@ static void signal_handler(int sig) {
 // =================================================================
 static void print_banner(void) {
     printf("\n");
-    printf("╔═══════════════════════════════════════════════════════════╗\n");
-    printf("║                     RosettaPad v0.2                       ║\n");
-    printf("║            DualSense to PS3 Controller Adapter            ║\n");
-    printf("╠═══════════════════════════════════════════════════════════╣\n");
-    printf("║  Modules:                                                 ║\n");
-    printf("║    • DS3 Emulation    - PlayStation 3 protocol            ║\n");
-    printf("║    • DualSense Input  - PS5 controller via Bluetooth      ║\n");
-    printf("║    • USB Gadget       - FunctionFS to PS3                 ║\n");
-    printf("╚═══════════════════════════════════════════════════════════╝\n");
+    printf("============================================================\n");
+    printf("                     RosettaPad v0.8                        \n");
+    printf("           DualSense to PS3 Controller Adapter              \n");
+    printf("============================================================\n");
+    printf("  Modules:                                                  \n");
+    printf("    - DS3 Emulation    : PlayStation 3 protocol             \n");
+    printf("    - DualSense Input  : PS5 controller via Bluetooth       \n");
+    printf("    - USB Gadget       : FunctionFS to PS3                  \n");
+    printf("    - Bluetooth HID    : Motion controls & PS3 wake         \n");
+    printf("    - Standby Mode     : Controller off, wake on reconnect  \n");
+    printf("============================================================\n");
     printf("\n");
 }
 
@@ -56,10 +63,12 @@ int main(int argc, char* argv[]) {
     (void)argv;
     
     pthread_t ds_input_tid;
-    pthread_t ds_output_tid;
+    pthread_t ctrl_output_tid;
     pthread_t usb_ctrl_tid;
     pthread_t usb_in_tid;
     pthread_t usb_out_tid;
+    pthread_t bt_hid_tid;
+    pthread_t bt_motion_tid;
     
     print_banner();
     
@@ -67,10 +76,20 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
+    // Create IPC directory
+    system("mkdir -p /tmp/rosettapad");
+    
     // Initialize modules
     printf("[Main] Initializing modules...\n");
     ds3_init();
     dualsense_init();
+    
+    // Initialize Bluetooth (this sets Pi's MAC in DS3 Report 0xF5 automatically)
+    if (bt_hid_init() < 0) {
+        printf("[Main] Warning: Bluetooth init failed - motion controls disabled\n");
+    } else {
+        printf("[Main] Bluetooth initialized (Pi's MAC auto-configured in Report 0xF5)\n");
+    }
     
     // Setup USB gadget
     if (usb_gadget_init() < 0) {
@@ -95,10 +114,12 @@ int main(int argc, char* argv[]) {
     printf("[Main] Starting threads...\n");
     
     pthread_create(&ds_input_tid, NULL, dualsense_thread, NULL);
-    pthread_create(&ds_output_tid, NULL, dualsense_output_thread, NULL);
+    pthread_create(&ctrl_output_tid, NULL, controller_output_thread, NULL);
     pthread_create(&usb_ctrl_tid, NULL, usb_control_thread, NULL);
     pthread_create(&usb_in_tid, NULL, usb_input_thread, NULL);
     pthread_create(&usb_out_tid, NULL, usb_output_thread, NULL);
+    pthread_create(&bt_hid_tid, NULL, bt_hid_thread, NULL);
+    pthread_create(&bt_motion_tid, NULL, bt_motion_thread, NULL);
     
     // Bind to UDC
     printf("[Main] Binding to USB...\n");
@@ -107,9 +128,12 @@ int main(int argc, char* argv[]) {
     }
     
     printf("\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("============================================================\n");
     printf("  Adapter running! Press Ctrl+C to stop.\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("  \n");
+    printf("  Standby: When PS3 powers off, controller disconnects.\n");
+    printf("           Turn controller back on to wake PS3.\n");
+    printf("============================================================\n");
     printf("\n");
     fflush(stdout);
     
@@ -126,11 +150,13 @@ int main(int argc, char* argv[]) {
         dualsense_send_output(g_hidraw_fd, 0, 0, 0, 0, 0, 0);
     }
     
+    // Disconnect Bluetooth
+    bt_hid_disconnect();
+    
     // Unbind USB gadget
     usb_gadget_unbind();
     
-    // Wait for threads (with timeout)
-    // Note: In production, you'd want proper thread cancellation
+    // Wait for threads
     sleep(1);
     
     // Cleanup file descriptors

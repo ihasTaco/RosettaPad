@@ -17,7 +17,7 @@ SERVICE_NAME="rosettapad"
 
 echo "[1/8] Installing dependencies..."
 apt-get update
-apt-get install -y build-essential bluez
+apt-get install -y build-essential bluez libbluetooth-dev
 
 # Ensure Bluetooth isn't blocked
 rfkill unblock bluetooth 2>/dev/null || true
@@ -56,6 +56,8 @@ echo "[3/8] Creating installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/src"
 mkdir -p "$INSTALL_DIR/include"
+mkdir -p /tmp/rosettapad
+mkdir -p /etc/rosettapad
 
 echo "[4/8] Copying source files..."
 
@@ -77,14 +79,14 @@ echo "  Copied source files to $INSTALL_DIR"
 
 echo "[5/8] Compiling adapter..."
 
-# Compile all .c files together
+# Compile all .c files together with Bluetooth support
 SRC_FILES=$(find "$INSTALL_DIR/src" -name "*.c" | tr '\n' ' ')
 
 gcc -O2 -Wall -Wextra \
     -I"$INSTALL_DIR/include" \
     -o "$INSTALL_DIR/rosettapad" \
     $SRC_FILES \
-    -lpthread
+    -lpthread -lbluetooth
 
 chmod +x "$INSTALL_DIR/rosettapad"
 echo "  Compilation successful!"
@@ -114,6 +116,18 @@ StandardError=journal
 WantedBy=multi-user.target
 SERVICE
 
+# Create default config if it doesn't exist
+if [ ! -f /etc/rosettapad/config ]; then
+    cat > /etc/rosettapad/config << 'CONFIG'
+# RosettaPad Configuration
+enable_bluetooth=1
+enable_motion=1
+enable_wake=1
+debug_level=0
+# ps3_mac will be auto-detected from USB connection
+CONFIG
+fi
+
 systemctl daemon-reload
 systemctl enable ${SERVICE_NAME}
 echo "  Service enabled for auto-start on boot"
@@ -126,6 +140,10 @@ echo "╔═══════════════════════�
 echo "║              Installation Complete!                          ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  The adapter will start automatically on boot.               ║"
+echo "║                                                              ║"
+echo "║  Features:                                                   ║"
+echo "║    • USB:       Buttons, sticks, triggers (low latency)      ║"
+echo "║    • Bluetooth: Motion controls (SIXAXIS), PS wake           ║"
 echo "║                                                              ║"
 echo "║  Commands:                                                   ║"
 echo "║    sudo systemctl start rosettapad   # Start now             ║"

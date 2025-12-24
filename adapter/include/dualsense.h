@@ -7,6 +7,7 @@
 #define ROSETTAPAD_DUALSENSE_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 // =================================================================
 // DualSense Identifiers
@@ -138,10 +139,16 @@ uint32_t dualsense_calc_crc32(const uint8_t* data, size_t len);
 void* dualsense_thread(void* arg);
 
 /**
- * Output thread for sending rumble/LED updates to DualSense
- * @param arg Unused  
- * @return NULL
+ * Shutdown the DualSense controller
+ * Turns off rumble, LEDs, and disconnects
+ * Used when entering standby mode
  */
-void* dualsense_output_thread(void* arg);
+void dualsense_shutdown(void);
+
+/**
+ * Check if DualSense controller is connected
+ * @return 1 if connected, 0 if not
+ */
+int dualsense_is_connected(void);
 
 #endif // ROSETTAPAD_DUALSENSE_H

@@ -317,6 +317,12 @@ void* usb_control_thread(void* arg) {
             case FUNCTIONFS_ENABLE:
                 printf("[USB] *** ENABLED - PS3 connected ***\n");
                 g_usb_enabled = 1;
+                
+                // If we were waking from standby (PS button pressed), now fully active
+                if (system_get_state() == SYSTEM_STATE_WAKING) {
+                    printf("[USB] PS3 responded to wake - now active\n");
+                    system_set_state(SYSTEM_STATE_ACTIVE);
+                }
                 break;
                 
             case FUNCTIONFS_DISABLE:
@@ -331,6 +337,16 @@ void* usb_control_thread(void* arg) {
             case FUNCTIONFS_UNBIND:
                 printf("[USB] UNBIND\n");
                 g_running = 0;
+                break;
+                
+            case FUNCTIONFS_SUSPEND:
+                printf("[USB] *** SUSPEND - USB power lost ***\n");
+                g_usb_enabled = 0;
+                
+                // Enter standby mode - PS3 is off
+                if (system_get_state() == SYSTEM_STATE_ACTIVE) {
+                    system_enter_standby();
+                }
                 break;
                 
             default:
@@ -358,6 +374,12 @@ void* usb_input_thread(void* arg) {
     uint8_t buf[DS3_INPUT_REPORT_SIZE];
     
     while (g_running) {
+        // Don't send data in standby mode
+        if (system_is_standby()) {
+            usleep(100000);  // 100ms - slow poll while in standby
+            continue;
+        }
+        
         if (g_usb_enabled) {
             ds3_copy_report(buf);
             
@@ -415,22 +437,23 @@ void* usb_output_thread(void* arg) {
             continue;
         }
         
-        // PS3 output report format:
-        // buf[0] = report ID (usually 0x01)
-        // buf[1] = duration for weak motor
-        // buf[2] = power for weak motor (0 or 1)
-        // buf[3] = duration for strong motor
-        // buf[4] = power for strong motor (0-255)
+        // PS3 DS3 output report format:
+        // [0] 0x01 - Report ID
+        // [1] 0xFE - Padding (or 0x00)
+        // [2] weak motor duration (0-255, typically 0xFE for "indefinite")
+        // [3] weak motor power (0 or 1 - binary on/off)
+        // [4] strong motor duration (0-255, typically 0xFE for "indefinite")
+        // [5] strong motor power (0-255 - variable intensity)
         
         if (n >= 6) {
-            uint8_t right_power = buf[3];  // Weak motor (on/off)
-            uint8_t left_power = buf[5];   // Strong motor (variable)
+            uint8_t weak_power = buf[3];    // Weak motor: 0 or 1 (on/off)
+            uint8_t strong_power = buf[5];  // Strong motor: 0-255
             
             // Convert DS3 rumble to DualSense
-            // DS3 weak motor: 0 or 1 -> DS full strength if on
-            // DS3 strong motor: 0-255 -> DS 0-255
-            uint8_t ds_right = right_power ? 0xFF : 0x00;
-            uint8_t ds_left = left_power;
+            // Weak motor (right) = binary on/off -> full strength if on
+            // Strong motor (left) = variable intensity
+            uint8_t ds_right = weak_power ? 0xFF : 0x00;
+            uint8_t ds_left = strong_power;
             
             pthread_mutex_lock(&g_rumble_mutex);
             g_rumble_right = ds_right;

@@ -1,78 +1,101 @@
-# RosettaPad - Makefile
-# Builds the modular DualSense to PS3 adapter
+# RosettaPad Makefile
+# Directory structure: include/ for headers, src/ for sources
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I./include
-LDFLAGS = -lpthread
+CFLAGS = -Wall -Wextra -O2 -pthread -I./include
+LDFLAGS = -pthread
 
 # Directories
 SRC_DIR = src
 INC_DIR = include
 BUILD_DIR = build
-BIN_DIR = bin
 
 # Source files
-SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/common.c \
-       $(SRC_DIR)/ds3.c \
-       $(SRC_DIR)/dualsense.c \
-       $(SRC_DIR)/usb_gadget.c
+COMMON_SRCS = $(SRC_DIR)/common.c \
+              $(SRC_DIR)/ds3.c \
+              $(SRC_DIR)/dualsense.c \
+              $(SRC_DIR)/usb_gadget.c
+
+HYBRID_SRCS = $(COMMON_SRCS) \
+              $(SRC_DIR)/bt_hid.c \
+              $(SRC_DIR)/main.c
 
 # Object files
-OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+HYBRID_OBJS = $(HYBRID_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
-# Target
-TARGET = $(BIN_DIR)/rosettapad
+# Bluetooth libraries
+BT_CFLAGS = $(shell pkg-config --cflags bluez 2>/dev/null)
+BT_LDFLAGS = $(shell pkg-config --libs bluez 2>/dev/null || echo "-lbluetooth")
 
-# Default target
-all: dirs $(TARGET)
+# Default target - build with Bluetooth support
+.PHONY: all clean install uninstall debug
 
-# Create directories
-dirs:
-	@mkdir -p $(BUILD_DIR) $(BIN_DIR)
+all: CFLAGS += $(BT_CFLAGS)
+all: LDFLAGS += $(BT_LDFLAGS)
+all: $(BUILD_DIR) rosettapad
 
-# Link
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
-	@echo "Built: $@"
+rosettapad: $(HYBRID_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+	@echo "Built rosettapad (hybrid USB + Bluetooth)"
 
-# Compile
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-# Clean
+# Compile source files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(BT_CFLAGS) -c $< -o $@
+
+# Header dependencies
+$(BUILD_DIR)/common.o: $(INC_DIR)/common.h
+$(BUILD_DIR)/ds3.o: $(INC_DIR)/ds3.h $(INC_DIR)/common.h
+$(BUILD_DIR)/dualsense.o: $(INC_DIR)/dualsense.h $(INC_DIR)/common.h $(INC_DIR)/ds3.h
+$(BUILD_DIR)/usb_gadget.o: $(INC_DIR)/usb_gadget.h $(INC_DIR)/common.h $(INC_DIR)/ds3.h
+$(BUILD_DIR)/bt_hid.o: $(INC_DIR)/bt_hid.h $(INC_DIR)/common.h $(INC_DIR)/ds3.h
+$(BUILD_DIR)/main.o: $(INC_DIR)/common.h $(INC_DIR)/ds3.h $(INC_DIR)/dualsense.h $(INC_DIR)/usb_gadget.h $(INC_DIR)/bt_hid.h
+
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	rm -rf $(BUILD_DIR) rosettapad
 
-# Install to system
-install: $(TARGET)
-	@echo "Installing to /opt/rosettapad..."
-	sudo mkdir -p /opt/rosettapad
-	sudo cp $(TARGET) /opt/rosettapad/
-	sudo ln -sf /opt/rosettapad/rosettapad /usr/local/bin/rosettapad
-	@echo "Installed!"
+install: rosettapad
+	install -m 755 rosettapad /usr/local/bin/
+	mkdir -p /etc/rosettapad
+	@if [ ! -f /etc/rosettapad/config ]; then \
+		echo "# RosettaPad Configuration" > /etc/rosettapad/config; \
+		echo "enable_bluetooth=1" >> /etc/rosettapad/config; \
+		echo "enable_motion=1" >> /etc/rosettapad/config; \
+		echo "enable_wake=1" >> /etc/rosettapad/config; \
+		echo "debug_level=0" >> /etc/rosettapad/config; \
+	fi
+	@echo "Installed rosettapad to /usr/local/bin/"
 
-# Development: build and run
-run: $(TARGET)
-	sudo $(TARGET)
+uninstall:
+	rm -f /usr/local/bin/rosettapad
+	@echo "Uninstalled rosettapad"
 
 # Debug build
-debug: CFLAGS += -g -DDEBUG
-debug: clean all
+debug: CFLAGS += -g -DDEBUG -O0
+debug: all
 
-# Show module structure
+# USB-only build (no Bluetooth)
+usb-only: CFLAGS += -DNO_BLUETOOTH
+usb-only: $(BUILD_DIR) rosettapad-usb
+
+USBONLY_SRCS = $(COMMON_SRCS) $(SRC_DIR)/main.c
+USBONLY_OBJS = $(USBONLY_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+rosettapad-usb: $(USBONLY_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+	@echo "Built rosettapad-usb (USB only, no Bluetooth)"
+
+# Cross-compile for Pi Zero 2W
+CROSS_CC = arm-linux-gnueabihf-gcc
+cross: CC = $(CROSS_CC)
+cross: all
+
+# Show config
 info:
-	@echo "RosettaPad Module Structure:"
-	@echo "  include/"
-	@echo "    common.h     - Shared state and types"
-	@echo "    ds3.h        - DS3 emulation interface"
-	@echo "    dualsense.h  - DualSense controller interface"
-	@echo "    usb_gadget.h - USB FunctionFS interface"
-	@echo "  src/"
-	@echo "    main.c       - Entry point, thread orchestration"
-	@echo "    common.c     - Global state definitions"
-	@echo "    ds3.c        - DS3 protocol implementation"
-	@echo "    dualsense.c  - DualSense BT communication"
-	@echo "    usb_gadget.c - USB gadget setup and threads"
-
-.PHONY: all dirs clean install run debug info
+	@echo "CC: $(CC)"
+	@echo "CFLAGS: $(CFLAGS) $(BT_CFLAGS)"
+	@echo "LDFLAGS: $(LDFLAGS) $(BT_LDFLAGS)"
+	@echo "Sources: $(HYBRID_SRCS)"
