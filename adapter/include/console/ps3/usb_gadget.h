@@ -17,7 +17,8 @@
 
 #define USB_GADGET_PATH     "/sys/kernel/config/usb_gadget/ds3"
 #define USB_FFS_PATH        "/dev/ffs-ds3"
-#define USB_UDC_NAME        "3f980000.usb"  /* Pi Zero 2W dwc2 */
+
+/* UDC is auto-detected at runtime - works on any Pi model */
 
 /* DS3 USB identifiers */
 #define DS3_USB_VID         0x054C  /* Sony */
@@ -47,7 +48,7 @@ extern int g_ep2_fd;
 
 /**
  * Initialize USB gadget subsystem.
- * Creates ConfigFS gadget structure and mounts FunctionFS.
+ * Auto-detects UDC, creates ConfigFS gadget structure and mounts FunctionFS.
  * @return 0 on success, -1 on failure
  */
 int ps3_usb_init(void);

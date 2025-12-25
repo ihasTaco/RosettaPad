@@ -543,6 +543,10 @@ int ps3_bt_connect(void) {
 }
 
 void ps3_bt_disconnect(void) {
+    if (g_ps3_bt_ctx.state == BT_STATE_DISCONNECTED) {
+        return;  /* Already disconnected */
+    }
+    
     printf("[BT] Disconnecting...\n");
     
     /* Clear rumble */
@@ -620,6 +624,10 @@ void* ps3_bt_thread(void* arg) {
     
     int connect_requested = 0;
     int was_usb_connected = 0;
+    uint64_t usb_disconnect_time = 0;
+    
+    /* Delay before attempting BT connection after USB disconnect (ms) */
+    #define BT_CONNECT_DELAY_MS 1000
     
     while (g_running) {
         if (system_is_standby()) {
@@ -629,13 +637,25 @@ void* ps3_bt_thread(void* arg) {
         
         switch (g_ps3_bt_ctx.state) {
             case BT_STATE_DISCONNECTED:
-                if (g_usb_enabled) was_usb_connected = 1;
+                if (g_usb_enabled) {
+                    was_usb_connected = 1;
+                    usb_disconnect_time = 0;
+                }
                 
-                /* Connect after USB disconnects */
-                if (was_usb_connected && !g_usb_enabled && !connect_requested && ds3_has_ps3_mac()) {
-                    usleep(200000);
-                    if (!system_is_standby() && ps3_bt_connect() == 0) {
-                        connect_requested = 1;
+                /* Track when USB disconnected */
+                if (was_usb_connected && !g_usb_enabled && usb_disconnect_time == 0) {
+                    usb_disconnect_time = time_get_ms();
+                }
+                
+                /* Connect after USB has been disconnected for a while */
+                if (was_usb_connected && !g_usb_enabled && !connect_requested && 
+                    ds3_has_ps3_mac() && usb_disconnect_time > 0) {
+                    
+                    uint64_t elapsed = time_get_ms() - usb_disconnect_time;
+                    if (elapsed >= BT_CONNECT_DELAY_MS) {
+                        if (!system_is_standby() && ps3_bt_connect() == 0) {
+                            connect_requested = 1;
+                        }
                     }
                 }
                 usleep(100000);
@@ -671,11 +691,23 @@ void* ps3_bt_thread(void* arg) {
                 break;
         }
         
-        /* Disconnect BT if USB reconnects */
+        /* Disconnect BT if USB reconnects (with hysteresis) */
         if (g_usb_enabled && g_ps3_bt_ctx.state >= BT_STATE_READY) {
-            ps3_bt_disconnect();
-            connect_requested = 0;
-            was_usb_connected = 1;
+            /* Wait a bit to make sure USB is stable before disconnecting BT */
+            static int usb_stable_count = 0;
+            usb_stable_count++;
+            
+            if (usb_stable_count >= 10) {  /* 100ms at 10ms loop rate */
+                printf("[BT] USB reconnected, disconnecting BT\n");
+                ps3_bt_disconnect();
+                connect_requested = 0;
+                was_usb_connected = 1;
+                usb_stable_count = 0;
+            }
+        } else {
+            /* Reset counter if USB not enabled */
+            static int usb_stable_count = 0;
+            usb_stable_count = 0;
         }
     }
     

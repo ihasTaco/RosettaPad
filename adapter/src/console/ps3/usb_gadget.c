@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <dirent.h>
 #include <linux/usb/functionfs.h>
 #include <linux/usb/ch9.h>
 
@@ -26,6 +27,16 @@ volatile int g_usb_enabled = 0;
 int g_ep0_fd = -1;
 int g_ep1_fd = -1;
 int g_ep2_fd = -1;
+
+/* Track consecutive suspend events to distinguish real power loss from glitches */
+static int g_suspend_count = 0;
+static uint64_t g_last_enable_time = 0;
+
+/* Minimum time USB must be enabled before we trust SUSPEND as real standby (ms) */
+#define USB_STABLE_TIME_MS 5000
+
+/* Number of consecutive suspends needed before entering standby */
+#define SUSPEND_THRESHOLD 3
 
 /* ============================================================================
  * USB DESCRIPTORS
@@ -128,11 +139,53 @@ static const struct {
 };
 
 /* ============================================================================
+ * UDC AUTO-DETECTION
+ * ============================================================================ */
+
+static char g_udc_name[64] = "";
+
+/**
+ * Auto-detect the UDC name by scanning /sys/class/udc/
+ * Works across different Pi models (Zero W, Zero 2W, Pi 4, etc.)
+ */
+static int detect_udc(void) {
+    DIR* dir = opendir("/sys/class/udc");
+    if (!dir) {
+        perror("[USB] Failed to open /sys/class/udc");
+        return -1;
+    }
+    
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        /* Skip . and .. */
+        if (entry->d_name[0] == '.') continue;
+        
+        /* Found a UDC */
+        strncpy(g_udc_name, entry->d_name, sizeof(g_udc_name) - 1);
+        g_udc_name[sizeof(g_udc_name) - 1] = '\0';
+        printf("[USB] Auto-detected UDC: %s\n", g_udc_name);
+        closedir(dir);
+        return 0;
+    }
+    
+    closedir(dir);
+    fprintf(stderr, "[USB] No UDC found in /sys/class/udc/\n");
+    return -1;
+}
+
+/* ============================================================================
  * GADGET SETUP
  * ============================================================================ */
 
 int ps3_usb_init(void) {
     printf("[USB] Initializing USB gadget...\n");
+    
+    /* Auto-detect UDC */
+    if (detect_udc() < 0) {
+        fprintf(stderr, "[USB] No USB Device Controller found. Is dwc2 loaded?\n");
+        fprintf(stderr, "[USB] Check: dtoverlay=dwc2,dr_mode=peripheral in /boot/firmware/config.txt\n");
+        return -1;
+    }
     
     /* Load kernel modules */
     system("modprobe libcomposite 2>/dev/null");
@@ -195,11 +248,16 @@ int ps3_usb_write_descriptors(int ep0_fd) {
 }
 
 int ps3_usb_bind(void) {
+    if (g_udc_name[0] == '\0') {
+        fprintf(stderr, "[USB] No UDC detected, cannot bind\n");
+        return -1;
+    }
+    
     char cmd[128];
-    snprintf(cmd, sizeof(cmd), "echo '%s' > %s/UDC", USB_UDC_NAME, USB_GADGET_PATH);
+    snprintf(cmd, sizeof(cmd), "echo '%s' > %s/UDC", g_udc_name, USB_GADGET_PATH);
     int ret = system(cmd);
     if (ret == 0) {
-        printf("[USB] Bound to UDC %s\n", USB_UDC_NAME);
+        printf("[USB] Bound to UDC %s\n", g_udc_name);
     }
     return ret == 0 ? 0 : -1;
 }
@@ -291,6 +349,8 @@ void* ps3_usb_control_thread(void* arg) {
             case FUNCTIONFS_ENABLE:
                 printf("[USB] *** ENABLED - PS3 connected ***\n");
                 g_usb_enabled = 1;
+                g_suspend_count = 0;  /* Reset suspend counter */
+                g_last_enable_time = time_get_ms();
                 
                 if (system_get_state() == SYSTEM_STATE_WAKING) {
                     printf("[USB] PS3 responded to wake\n");
@@ -310,14 +370,32 @@ void* ps3_usb_control_thread(void* arg) {
                 controller_output_update(&output);
                 break;
                 
-            case FUNCTIONFS_SUSPEND:
-                printf("[USB] *** SUSPEND - USB power lost ***\n");
-                g_usb_enabled = 0;
+            case FUNCTIONFS_SUSPEND: {
+                g_suspend_count++;
+                uint64_t now = time_get_ms();
+                uint64_t time_since_enable = now - g_last_enable_time;
                 
-                if (system_get_state() == SYSTEM_STATE_ACTIVE) {
+                printf("[USB] SUSPEND event #%d (USB stable for %llu ms)\n", 
+                       g_suspend_count, (unsigned long long)time_since_enable);
+                
+                /* 
+                 * Only enter standby if:
+                 * 1. USB has been stable for a while (not just during initial connection)
+                 * 2. We've seen multiple suspend events (not just a glitch)
+                 * 3. We're currently in ACTIVE state
+                 */
+                if (time_since_enable >= USB_STABLE_TIME_MS && 
+                    g_suspend_count >= SUSPEND_THRESHOLD &&
+                    system_get_state() == SYSTEM_STATE_ACTIVE) {
+                    
+                    printf("[USB] *** SUSPEND confirmed - entering standby ***\n");
+                    g_usb_enabled = 0;
                     system_enter_standby();
+                } else {
+                    printf("[USB] SUSPEND ignored (not stable or threshold not met)\n");
                 }
                 break;
+            }
                 
             case FUNCTIONFS_UNBIND:
                 printf("[USB] UNBIND\n");

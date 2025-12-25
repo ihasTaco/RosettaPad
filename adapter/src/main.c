@@ -96,12 +96,17 @@ static void print_banner(void) {
 static int g_controller_fd = -1;
 static const controller_driver_t* g_active_driver = NULL;
 
+/* Wake button debouncing */
+static uint64_t g_last_home_press_time = 0;
+#define HOME_BUTTON_DEBOUNCE_MS 500
+
 void* controller_input_thread(void* arg) {
     (void)arg;
     printf("[Input] Controller input thread started\n");
     
     uint8_t buf[128];
     controller_state_t state;
+    int prev_home_pressed = 0;
     
     while (g_running) {
         /* Find controller if not connected */
@@ -146,26 +151,39 @@ void* controller_input_thread(void* arg) {
             continue;
         }
         
-        /* Handle standby mode - check for wake button */
-        if (system_is_standby()) {
-            /* Check for PS/Home button press */
-            if (g_active_driver && g_active_driver->process_input) {
-                if (g_active_driver->process_input(buf, n, &state) == 0) {
-                    if (CONTROLLER_BTN_PRESSED(&state, BTN_HOME)) {
-                        printf("[Input] Home button pressed - waking PS3\n");
-                        system_exit_standby();
-                    }
-                }
-            }
+        /* Parse input */
+        if (!g_active_driver || !g_active_driver->process_input) {
             continue;
         }
         
-        /* Normal operation - process input */
-        if (g_active_driver && g_active_driver->process_input) {
-            if (g_active_driver->process_input(buf, n, &state) == 0) {
-                controller_state_update(&state);
-            }
+        if (g_active_driver->process_input(buf, n, &state) != 0) {
+            continue;
         }
+        
+        /* Handle standby mode - check for wake button with debouncing */
+        if (system_is_standby()) {
+            int home_pressed = CONTROLLER_BTN_PRESSED(&state, BTN_HOME);
+            
+            /* Detect rising edge (button just pressed) with debounce */
+            if (home_pressed && !prev_home_pressed) {
+                uint64_t now = time_get_ms();
+                
+                if (now - g_last_home_press_time >= HOME_BUTTON_DEBOUNCE_MS) {
+                    printf("[Input] Home button pressed - waking PS3\n");
+                    g_last_home_press_time = now;
+                    system_exit_standby();
+                } else {
+                    printf("[Input] Home button ignored (debounce)\n");
+                }
+            }
+            
+            prev_home_pressed = home_pressed;
+            continue;
+        }
+        
+        /* Normal operation - update state */
+        prev_home_pressed = CONTROLLER_BTN_PRESSED(&state, BTN_HOME);
+        controller_state_update(&state);
     }
     
     /* Cleanup */

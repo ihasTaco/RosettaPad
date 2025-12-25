@@ -25,6 +25,10 @@ volatile int g_running = 1;
 
 static volatile system_state_t g_system_state = SYSTEM_STATE_ACTIVE;
 static pthread_mutex_t g_system_state_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t g_last_state_change_time = 0;
+
+/* Minimum time between state changes (ms) - prevents rapid oscillation */
+#define STATE_CHANGE_DEBOUNCE_MS 2000
 
 static const char* state_names[] = {"ACTIVE", "STANDBY", "WAKING"};
 
@@ -32,6 +36,7 @@ void system_set_state(system_state_t state) {
     pthread_mutex_lock(&g_system_state_mutex);
     system_state_t old_state = g_system_state;
     g_system_state = state;
+    g_last_state_change_time = time_get_ms();
     pthread_mutex_unlock(&g_system_state_mutex);
     
     printf("[System] State: %s -> %s\n", state_names[old_state], state_names[state]);
@@ -48,11 +53,35 @@ int system_is_standby(void) {
     return system_get_state() == SYSTEM_STATE_STANDBY;
 }
 
+/* Check if we can change state (debounce) */
+static int can_change_state(void) {
+    pthread_mutex_lock(&g_system_state_mutex);
+    uint64_t now = time_get_ms();
+    uint64_t elapsed = now - g_last_state_change_time;
+    pthread_mutex_unlock(&g_system_state_mutex);
+    
+    return elapsed >= STATE_CHANGE_DEBOUNCE_MS;
+}
+
 /* Forward declarations for console-specific functions */
 extern void ps3_bt_disconnect(void);
 extern int ps3_bt_wake(void);
 
 void system_enter_standby(void) {
+    /* Debounce - don't enter standby if we just changed state */
+    if (!can_change_state()) {
+        printf("[System] Ignoring standby request (debounce)\n");
+        return;
+    }
+    
+    /* Don't enter standby if we're already in standby or waking */
+    system_state_t current = system_get_state();
+    if (current != SYSTEM_STATE_ACTIVE) {
+        printf("[System] Ignoring standby request (not active, state=%s)\n", 
+               state_names[current]);
+        return;
+    }
+    
     printf("[System] *** ENTERING STANDBY MODE ***\n");
     
     system_set_state(SYSTEM_STATE_STANDBY);
@@ -74,6 +103,18 @@ void system_enter_standby(void) {
 }
 
 void system_exit_standby(void) {
+    /* Debounce - don't wake if we just changed state */
+    if (!can_change_state()) {
+        printf("[System] Ignoring wake request (debounce)\n");
+        return;
+    }
+    
+    /* Only exit standby if we're actually in standby */
+    if (system_get_state() != SYSTEM_STATE_STANDBY) {
+        printf("[System] Ignoring wake request (not in standby)\n");
+        return;
+    }
+    
     printf("[System] *** EXITING STANDBY MODE ***\n");
     
     system_set_state(SYSTEM_STATE_WAKING);
@@ -238,6 +279,7 @@ void* controller_output_thread(void* arg) {
     
     controller_output_t last_output = {0};
     int ipc_counter = 0;
+    int consecutive_failures = 0;
     
     while (g_running) {
         /* Check for lightbar IPC updates every ~500ms */
@@ -267,9 +309,24 @@ void* controller_output_thread(void* arg) {
         /* Send output if changed and we have an active controller */
         if (changed && g_active_driver && g_controller_fd >= 0) {
             if (g_active_driver->send_output) {
-                g_active_driver->send_output(g_controller_fd, &output);
+                int ret = g_active_driver->send_output(g_controller_fd, &output);
+                if (ret < 0) {
+                    consecutive_failures++;
+                    /* Only log after several failures to reduce noise */
+                    if (consecutive_failures == 5) {
+                        printf("[Output] Warning: Multiple output send failures\n");
+                    }
+                    /* Don't update last_output so we retry */
+                } else {
+                    if (consecutive_failures >= 5) {
+                        printf("[Output] Output send recovered\n");
+                    }
+                    consecutive_failures = 0;
+                    last_output = output;
+                }
+            } else {
+                last_output = output;
             }
-            last_output = output;
         }
         
         usleep(10000);  /* 100Hz */
