@@ -92,6 +92,10 @@
 #define DS3_OFF_LY            7
 #define DS3_OFF_RX            8
 #define DS3_OFF_RY            9
+#define DS3_OFF_DPAD_UP_PRESSURE    14
+#define DS3_OFF_DPAD_RIGHT_PRESSURE 15
+#define DS3_OFF_DPAD_DOWN_PRESSURE  16
+#define DS3_OFF_DPAD_LEFT_PRESSURE  17
 #define DS3_OFF_L2_PRESSURE   18
 #define DS3_OFF_R2_PRESSURE   19
 #define DS3_OFF_BATTERY       29

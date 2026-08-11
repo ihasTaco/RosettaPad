@@ -28,8 +28,8 @@ static uint8_t g_ds3_report[DS3_INPUT_REPORT_SIZE] = {
     0x80,       /* [7]  Left stick Y */
     0x80,       /* [8]  Right stick X */
     0x80,       /* [9]  Right stick Y */
-    0x00, 0x00, 0x00, 0x00,  /* [10-13] D-pad pressure */
-    0x00, 0x00, 0x00, 0x00,  /* [14-17] Reserved */
+    0x00, 0x00, 0x00, 0x00,  /* [10-13] Reserved */
+    0x00, 0x00, 0x00, 0x00,  /* [14-17] D-pad pressure (Up, Right, Down, Left) */
     0x00,       /* [18] L2 pressure */
     0x00,       /* [19] R2 pressure */
     0x00,       /* [20] L1 pressure */
@@ -277,11 +277,23 @@ void ds3_build_input_report(const controller_state_t* state, uint8_t* out_report
     out_report[DS3_OFF_RX] = state->right_stick_x;
     out_report[DS3_OFF_RY] = state->right_stick_y;
     
-    /* --- D-pad Pressure (bytes 10-13) --- */
-    out_report[10] = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_UP)    ? 0xFF : 0x00;
-    out_report[11] = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_RIGHT) ? 0xFF : 0x00;
-    out_report[12] = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_DOWN)  ? 0xFF : 0x00;
-    out_report[13] = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_LEFT)  ? 0xFF : 0x00;
+    /* --- D-pad Pressure (bytes 14-17) --- */
+    /*
+     * The DS3 has pressure-sensitive D-pad buttons. Since the DualSense
+     * D-pad is digital-only, we simulate full pressure (0xFF) when pressed
+     * and zero when released. Bytes 10-13 are reserved/unused on DS3.
+     *
+     * Reference: PS3_ANALOG_BUTTONS in https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3Enums.h
+     * readBuf offsets (shifted -9 for raw report): Up=14, Right=15, Down=16, Left=17
+     */
+    out_report[10] = 0x00;  /* Reserved */
+    out_report[11] = 0x00;  /* Reserved */
+    out_report[12] = 0x00;  /* Reserved */
+    out_report[13] = 0x00;  /* Reserved */
+    out_report[DS3_OFF_DPAD_UP_PRESSURE]    = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_UP)    ? 0xFF : 0x00;
+    out_report[DS3_OFF_DPAD_RIGHT_PRESSURE] = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_RIGHT) ? 0xFF : 0x00;
+    out_report[DS3_OFF_DPAD_DOWN_PRESSURE]  = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_DOWN)  ? 0xFF : 0x00;
+    out_report[DS3_OFF_DPAD_LEFT_PRESSURE]  = CONTROLLER_BTN_PRESSED(state, BTN_DPAD_LEFT)  ? 0xFF : 0x00;
     
     /* --- Trigger Pressure (bytes 18-19) --- */
     out_report[DS3_OFF_L2_PRESSURE] = state->left_trigger;

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -94,6 +95,29 @@ static int is_sony_oui(const bdaddr_t* addr) {
         if (memcmp(mac, SONY_OUI[i], 3) == 0) return 1;
     }
     return 0;
+}
+
+/* Portable case-insensitive substring search.
+ * Many platforms (including some musl-based systems) lack strcasestr.
+ * Provide a simple implementation and use it where needed.
+ */
+static char* strcasestr_compat(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return NULL;
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0) return (char*)haystack;
+
+    for (const char* p = haystack; *p; p++) {
+        size_t i;
+        for (i = 0; i < needle_len; i++) {
+            char a = p[i];
+            char b = needle[i];
+            if (a == '\0') break;
+            if (tolower((unsigned char)a) != tolower((unsigned char)b)) break;
+        }
+        if (i == needle_len) return (char*)p;
+        if (p[0] == '\0') break;
+    }
+    return NULL;
 }
 
 /* ============================================================================
@@ -240,8 +264,8 @@ int ps3_bt_scan(int timeout_sec) {
         char name[248] = {0};
         hci_read_remote_name(sock, &devices[i].bdaddr, sizeof(name), name, 0);
         
-        if (strcasestr(name, "playstation") || strcasestr(name, "PS3") || 
-            strcasestr(name, "sony") || is_sony_oui(&devices[i].bdaddr)) {
+        if (strcasestr_compat(name, "playstation") || strcasestr_compat(name, "PS3") || 
+            strcasestr_compat(name, "sony") || is_sony_oui(&devices[i].bdaddr)) {
             bacpy(&g_ps3_bt_ctx.ps3_addr, &devices[i].bdaddr);
             g_ps3_bt_ctx.ps3_addr_valid = 1;
             found = 1;
