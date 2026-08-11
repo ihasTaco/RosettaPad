@@ -76,6 +76,7 @@ RosettaPad solves this by acting as a translator: it presents itself to the PS3 
 | Web Configuration Panel | Started | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
 | Pico 2W Port | Started | [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
 | Button Remapping | Not Started | Architecture ready, UI needed |
+| DualSense Adaptive triggers | Not Started | N/A |
 | Lightbar Customization | Not Started | N/A |
 | Macros | Not Started | N/A |
 | Additional controller support | Not Started | N/A |
