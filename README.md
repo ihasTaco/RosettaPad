@@ -108,7 +108,7 @@ sudo apt update && sudo apt upgrade -y && sudo apt install -y git
 git clone https://github.com/ihasTaco/RosettaPad.git
 cd RosettaPad
 chmod +x install_debian.sh
-./install.sh
+./install_debian.sh
 ```
 3. The install script will update the system, install dependencies, enable usb gadget mode, build the source into an executable and finally create a service for you before rebooting.
 4. Once back up, run `bluetoothctl`, then: 
