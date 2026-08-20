@@ -99,9 +99,9 @@ What should you expect if you setup RosettaPad right now?
 ### Quick Start
 
 1. Flash Raspberry Pi OS Lite (64-bit) for Zero 2W or OS Lite (32-bit) for Zero W.
-2. Install Git:
+2. Update system and install Git:
 ``` bash
-sudo apt install -y git
+sudo apt update && sudo apt upgrade -y && sudo apt install -y git
 ```
 3. Install RosettaPad:
 ``` bash
