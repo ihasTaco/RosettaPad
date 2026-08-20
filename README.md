@@ -33,10 +33,13 @@ The goal of RosettaPad is to pair any controller to the PS3 with full feature su
 </details>
 
 ## What's the Point?
-You may be asking, "I can connect my DualSense/DS4/Wildcatz/8BitDo controllers to the PS3 right now." You're right, but for some reason the PS3 gamepad driver is very limited for anything it deems "generic." Basically, if it isn't a DualShock 3 controller, you lose things like the PS button, rumble, and motion controls (sixaxis). So if you want to do anything like go to the XMB or turn off the PS3 wirelessly, you just... can't.  
+You may be asking, **"I can connect my DualSense/DS4/Wildcatz/8BitDo controllers to the PS3 right now."**   
+Yep.
 
-I specifically wanted to be able to use my DualSense controller on my PS3, all buttons including the ps button, rumble, and motion controls. I also didn't want to jump through hoops, or need an actual DS3 controller in order to pair it to the PS3. 
+So the PS3 is kinda dumb, well at least the gamepad drive is. If it isn't specifically a DualShock 3 controller, it deems the controller "generic" and switches to an all purpose gamepad driver that disables stuff like PS button, rumble, motion controls, etc. So if for some reason you wanted to exit a game and go to the XMB, you just.... can't.  
 
+Okay, so I'm kinda cheap and didn't really want to buy a thing to plug in and have it just *work* when I could probably just make it myself. It probably would've cost me $50, and then I'd have to wait like 2 days 🤮 So instead I spent every waking moment for a month reading as much material as I can find on the dualshock 3 HID and bluetooth handshake, doing my own testing, and finally building RosettaPad.   
+Was it worth it? Probably not lol I later found out that there is some other projects doing pretty similar things, but they needed needlessly complicated steps to setup. I also wanted to add some features they didn't have. Mostly what intrigued me was a TAS system (TBD) I don't know if it will be useful, but it will be cool and thats all that matters to me.
 
 ## Features
 
