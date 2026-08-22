@@ -1,8 +1,8 @@
 # RosettaPad
 
-**A universal controller adapter for the PlayStation 3**
+**Use a DualSense controller on your PS3 to get working PS (Home) button and rumble!**
 
-The goal of RosettaPad is to pair any controller to the PS3 with full feature support, including the PS (Home) button, rumble, and motion controls that typically don't work with third party adapters as well as add some other features the DualShock 3 (DS3) does not have, without needing a jailbreak.
+RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, rumble, battery status) work as expected. Setup takes about 15 minutes.
 
 > [!NOTE]
 > **Current Status**: Currently RosettaPad is active for DualSense (PS5/DS5) controller support on the PS3. 
