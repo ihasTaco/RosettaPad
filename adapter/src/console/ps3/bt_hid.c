@@ -720,9 +720,17 @@ void* ps3_bt_thread(void* arg) {
     int connect_requested = 0;
     int was_usb_connected = 0;
     uint64_t usb_disconnect_time = 0;
+    uint64_t next_attempt_ms = 0;
+    int attempts = 0;
     
-    /* Delay before attempting BT connection after USB disconnect (ms) */
-    #define BT_CONNECT_DELAY_MS 1000
+    /* Delay before first BT attempt after USB disconnect (ms) */
+    #define BT_CONNECT_DELAY_MS 250
+    /* Reconnect pacing: quick retries first, then settle to 1/s */
+    #define BT_RETRY_FAST_MS    250
+    #define BT_RETRY_FAST_COUNT 3
+    #define BT_RETRY_SLOW_MS    1000
+    /* PS3 must send F4 enable within this long of connect, else reconnect */
+    #define BT_F4_TIMEOUT_MS    2000
     
     while (g_running) {
         ps3_usb_check_suspend_timeout();  /* USB unplug detection, see usb_gadget.c */
@@ -737,6 +745,8 @@ void* ps3_bt_thread(void* arg) {
                 if (g_usb_enabled) {
                     was_usb_connected = 1;
                     usb_disconnect_time = 0;
+                    attempts = 0;
+                    next_attempt_ms = 0;
                 }
                 
                 /* Track when USB disconnected */
@@ -744,34 +754,44 @@ void* ps3_bt_thread(void* arg) {
                     usb_disconnect_time = time_get_ms();
                 }
                 
-                /* Connect after USB has been disconnected for a while */
+                /* Connect once USB has been gone for BT_CONNECT_DELAY_MS,
+                 * then keep retrying until it sticks or USB comes back */
                 if (was_usb_connected && !g_usb_enabled && !connect_requested && 
                     ds3_has_ps3_mac() && usb_disconnect_time > 0) {
                     
-                    uint64_t elapsed = time_get_ms() - usb_disconnect_time;
-                    if (elapsed >= BT_CONNECT_DELAY_MS) {
+                    uint64_t now = time_get_ms();
+                    if (now - usb_disconnect_time >= BT_CONNECT_DELAY_MS && now >= next_attempt_ms) {
+                        attempts++;
                         if (!system_is_standby() && ps3_bt_connect() == 0) {
                             connect_requested = 1;
+                        } else {
+                            next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
+                                                     ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
                         }
                     }
                 }
-                usleep(100000);
+                usleep(50000);
                 break;
                 
             case BT_STATE_READY:
             case BT_STATE_ENABLED:
-                /* Auto-enable after timeout */
-                if (g_ps3_bt_ctx.state == BT_STATE_READY) {
-                    static int ready_count = 0;
-                    if (++ready_count >= 50) {
-                        g_ps3_bt_ctx.state = BT_STATE_ENABLED;
-                        ready_count = 0;
-                    }
+                /* The PS3 only honors input after it sends F4 enable. If it
+                 * never does (happens after an unclean previous session), a
+                 * fresh connection is what fixes it - so do that ourselves. */
+                if (g_ps3_bt_ctx.state == BT_STATE_READY &&
+                    time_get_ms() - g_ps3_bt_ctx.connect_time >= BT_F4_TIMEOUT_MS) {
+                    printf("[BT] No F4 enable from PS3 within %d ms - reconnecting\n", BT_F4_TIMEOUT_MS);
+                    ps3_bt_disconnect();
+                    connect_requested = 0;
+                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
+                    continue;
                 }
                 
                 if (process_control() < 0 || process_interrupt() < 0) {
+                    printf("[BT] Link dropped - reconnecting\n");
                     ps3_bt_disconnect();
                     connect_requested = 0;
+                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
                     continue;
                 }
                 
@@ -811,7 +831,7 @@ void* ps3_bt_thread(void* arg) {
             case BT_STATE_ERROR:
                 ps3_bt_disconnect();
                 connect_requested = 0;
-                sleep(5);
+                next_attempt_ms = time_get_ms() + BT_RETRY_SLOW_MS;
                 break;
                 
             default:

@@ -41,7 +41,7 @@ static uint64_t g_last_enable_time = 0;
 /* On an externally powered Pi Zero, VBUS never drops on unplug (it's tied to
  * the 5V rail), so dwc2 never sends DISABLE - only a SUSPEND with no RESUME.
  * Treat that as a disconnect after this long (ms). */
-#define SUSPEND_DISCONNECT_MS 1500
+#define SUSPEND_DISCONNECT_MS 1000
 static volatile uint64_t g_suspend_since = 0;
 
 /* ============================================================================
