@@ -269,35 +269,6 @@ static void set_lightbar_sysfs(uint8_t r, uint8_t g, uint8_t b) {
     }
 }
 
-static void set_player_leds_sysfs(uint8_t player_mask) {
-    static int pled_log_count = 0;
-    if (++pled_log_count <= 10) {
-        printf("[DualSense] Setting player LEDs: 0x%02X\n", player_mask);
-    }
-    
-    int leds_set = 0;
-    for (int i = 0; i < 5; i++) {
-        if (g_player_led_paths[i][0] == '\0') continue;
-        
-        char path[576];
-        snprintf(path, sizeof(path), "%s/brightness", g_player_led_paths[i]);
-        
-        FILE* f = fopen(path, "w");
-        if (f) {
-            int on = (player_mask & (1 << i)) ? 255 : 0;
-            fprintf(f, "%d", on);
-            fclose(f);
-            leds_set++;
-            if (pled_log_count <= 5) {
-                printf("[DualSense] LED %d = %d (path: %s)\n", i+1, on, path);
-            }
-        }
-    }
-    
-    if (pled_log_count <= 5 && leds_set == 0) {
-        printf("[DualSense] WARNING: No player LED paths found!\n");
-    }
-}
 
 /* ============================================================================
  * CONTROLLER INFO
@@ -350,7 +321,9 @@ static int dualsense_find_device(void) {
         char path[272];
         snprintf(path, sizeof(path), "/dev/%s", entry->d_name);
         
-        int fd = open(path, O_RDWR);
+        /* O_NONBLOCK: if the BT output queue is full we want EAGAIN back
+         * immediately (output thread backs off) rather than blocking. */
+        int fd = open(path, O_RDWR | O_NONBLOCK);
         if (fd < 0) continue;
         
         struct hidraw_devinfo info;
@@ -593,77 +566,123 @@ static int dualsense_process_input(const uint8_t* buf, size_t len,
 /* Output report sequence counter */
 static uint8_t output_seq = 0;
 
-/* Cached LED state for change detection */
-static uint8_t last_led_r = 255, last_led_g = 255, last_led_b = 255;
-static uint8_t last_player_leds = 0xFF;
+/* Last state actually written to the controller. Sentinel values (0xFF
+ * player mask is impossible, 255/255/255 lightbar is "unknown") force the
+ * first send after connect to push everything. */
+static controller_output_t last_sent = {
+    .rumble_left = 0, .rumble_right = 0,
+    .led_r = 255, .led_g = 255, .led_b = 255,
+    .player_leds = 0xFF,
+};
+static int have_last_sent = 0;
 
-static int dualsense_send_output(int fd, const controller_output_t* output) {
-    /* 
-     * LED control via sysfs.
-     * We refresh every call to fight against the kernel driver's defaults.
-     * The kernel hid-playstation driver sets blue + player 1, so we override.
-     */
-    static int led_refresh_counter = 0;
-    led_refresh_counter++;
-    
-    /* Force refresh every 10 calls (~100ms at 100Hz) to fight kernel driver */
-    int force_refresh = (led_refresh_counter >= 10);
-    if (force_refresh) {
-        led_refresh_counter = 0;
-    }
-    
-    if (force_refresh || 
-        output->led_r != last_led_r || 
-        output->led_g != last_led_g || 
-        output->led_b != last_led_b) {
-        set_lightbar_sysfs(output->led_r, output->led_g, output->led_b);
-        last_led_r = output->led_r;
-        last_led_g = output->led_g;
-        last_led_b = output->led_b;
-    }
-    
-    if (force_refresh || output->player_leds != last_player_leds) {
-        set_player_leds_sysfs(output->player_leds);
-        last_player_leds = output->player_leds;
-    }
-    
-    /* Rumble via hidraw */
-    if (fd < 0) return -1;
-    
+/* Time-based periodic refresh (NOT call-count based). The kernel driver only
+ * reasserts its blue/P1 defaults on connect, so this is a safety net, not a
+ * fight. 0 disables. */
+#define DS_LED_REFRESH_MS  2000
+static uint64_t last_send_ms = 0;
+
+/*
+ * Build and write ONE BT output report (0x31) carrying rumble, player LEDs
+ * and lightbar together. Going through sysfs for LEDs caused hid-playstation
+ * to queue its own reports on top of ours - up to 6 BT packets for a single
+ * state change - which saturates the DualSense's L2CAP interrupt channel.
+ *
+ * BT report layout: [0]=0x31 [1]=seq<<4 [2]=0x10 tag, then the 47-byte
+ * "common" output block starting at [3] (same struct the kernel's
+ * hid-playstation uses). Offsets below are common-block offsets + 3.
+ */
+static int dualsense_write_report(int fd, const controller_output_t* out,
+                                  int send_rumble, int send_leds) {
     uint8_t report[DS_BT_OUTPUT_SIZE] = {0};
-    
-    report[0] = 0x31;  /* Report ID */
+
+    report[0] = DS_BT_REPORT_ID;
     report[1] = (output_seq << 4) & 0xF0;
     output_seq = (output_seq + 1) & 0x0F;
-    report[2] = 0x10;  /* Tag */
-    report[3] = 0x03;  /* Valid flags: rumble + haptics */
-    report[4] = 0;     /* No LED flags (using sysfs) */
-    report[5] = output->rumble_right;
-    report[6] = output->rumble_left;
-    
-    /* Calculate CRC32 */
+    report[2] = 0x10;
+
+    /* valid_flag0: 0x01 = compatible (DS4-style) rumble, 0x02 = haptics select */
+    if (send_rumble) {
+        report[3]  = 0x03;
+        report[5]  = out->rumble_right;   /* weak / high-freq */
+        report[6]  = out->rumble_left;    /* strong / low-freq */
+    }
+
+    /* valid_flag1: 0x04 = lightbar, 0x10 = player LEDs */
+    if (send_leds) {
+        report[4] |= 0x04 | 0x10;
+        /* Common block (47 bytes) starts at report[3]:
+         *   +42 led_brightness, +43 player_leds, +44/45/46 R/G/B */
+        report[45] = 0x00;                 /* LED brightness: 0 = full */
+        report[46] = out->player_leds & 0x1F;
+        report[47] = out->led_r;
+        report[48] = out->led_g;
+        report[49] = out->led_b;
+    }
+
+    /* CRC32 over 0xA2 header + first 74 bytes */
     uint8_t crc_buf[75];
-    crc_buf[0] = 0xA2;  /* BT output report header */
+    crc_buf[0] = 0xA2;
     memcpy(&crc_buf[1], report, 74);
     uint32_t crc = dualsense_calc_crc32(crc_buf, 75);
-    
     report[74] = crc & 0xFF;
     report[75] = (crc >> 8) & 0xFF;
     report[76] = (crc >> 16) & 0xFF;
     report[77] = (crc >> 24) & 0xFF;
-    
+
     ssize_t written = write(fd, report, sizeof(report));
-    return (written > 0) ? 0 : -1;
+    return (written == (ssize_t)sizeof(report)) ? 0 : -1;
+}
+
+static int dualsense_send_output(int fd, const controller_output_t* output) {
+    if (fd < 0) return -1;
+
+    uint64_t now = time_get_ms();
+
+    int rumble_changed = !have_last_sent ||
+        output->rumble_left  != last_sent.rumble_left ||
+        output->rumble_right != last_sent.rumble_right;
+
+    int leds_changed = !have_last_sent ||
+        output->led_r != last_sent.led_r ||
+        output->led_g != last_sent.led_g ||
+        output->led_b != last_sent.led_b ||
+        output->player_leds != last_sent.player_leds;
+
+    /* Periodic LED refresh only if we've been idle - never during a rumble
+     * burst, which is exactly when the old call-counted refresh fired. */
+    int refresh = DS_LED_REFRESH_MS > 0 && have_last_sent &&
+                  (now - last_send_ms) >= DS_LED_REFRESH_MS;
+
+    if (!rumble_changed && !leds_changed && !refresh) {
+        return 0;   /* Nothing to do - no packet */
+    }
+
+    int rc = dualsense_write_report(fd, output, rumble_changed, leds_changed || refresh);
+    if (rc < 0) {
+        return -1;  /* Caller backs off; last_sent unchanged so we retry the diff */
+    }
+
+    if (leds_changed || refresh) {
+        static int led_log_count = 0;
+        if (leds_changed && ++led_log_count <= 5) {
+            printf("[DualSense] LEDs: player=0x%02X lightbar=(%d,%d,%d)\n",
+                   output->player_leds, output->led_r, output->led_g, output->led_b);
+        }
+    }
+
+    last_sent = *output;
+    have_last_sent = 1;
+    last_send_ms = now;
+    return 0;
 }
 
 static void dualsense_on_disconnect(void) {
     printf("[DualSense] Disconnected\n");
     
-    /* Reset LED cache */
-    last_led_r = 255;
-    last_led_g = 255;
-    last_led_b = 255;
-    last_player_leds = 0xFF;
+    /* Forget what we sent - next connect must push full state */
+    have_last_sent = 0;
+    output_seq = 0;
     
     /* Clear sysfs paths (device might get new input number on reconnect) */
     g_lightbar_path[0] = '\0';
@@ -672,13 +691,13 @@ static void dualsense_on_disconnect(void) {
 static void dualsense_enter_low_power(int fd) {
     printf("[DualSense] Entering low power mode\n");
     
-    /* Turn off LEDs */
-    set_lightbar_sysfs(0, 0, 0);
-    set_player_leds_sysfs(0);
-    
-    /* Stop rumble */
+    /* Turn off LEDs and rumble in one report */
     controller_output_t off = {0};
-    dualsense_send_output(fd, &off);
+    if (fd >= 0) {
+        dualsense_write_report(fd, &off, 1, 1);
+        last_sent = off;
+        have_last_sent = 1;
+    }
 }
 
 /* ============================================================================
