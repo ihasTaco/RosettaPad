@@ -654,6 +654,8 @@ void* ps3_bt_thread(void* arg) {
     #define BT_CONNECT_DELAY_MS 1000
     
     while (g_running) {
+        ps3_usb_check_suspend_timeout();  /* USB unplug detection, see usb_gadget.c */
+        
         if (system_is_standby()) {
             usleep(100000);
             continue;
