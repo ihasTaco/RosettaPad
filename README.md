@@ -136,16 +136,7 @@ trust XX:XX:XX:XX:XX:XX
 connect XX:XX:XX:XX:XX:XX
 quit
 ```
-6. Plug the Pi into the PS3 via the data port and run one of these:  
-As a service
-``` bash
-sudo systemctl start rosettapad
-sudo systemctl enable rosettapad  # Start on boot
-```
-Or Manually
-``` bash
-sudo rosettapad
-```
+6. Plug the Pi into the PS3 via the data port.
 7. Done!
 
 ## Troubleshooting
