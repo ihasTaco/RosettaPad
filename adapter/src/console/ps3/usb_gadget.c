@@ -38,6 +38,12 @@ static uint64_t g_last_enable_time = 0;
 /* Number of consecutive suspends needed before entering standby */
 #define SUSPEND_THRESHOLD 3
 
+/* On an externally powered Pi Zero, VBUS never drops on unplug (it's tied to
+ * the 5V rail), so dwc2 never sends DISABLE - only a SUSPEND with no RESUME.
+ * Treat that as a disconnect after this long (ms). */
+#define SUSPEND_DISCONNECT_MS 1000
+static volatile uint64_t g_suspend_since = 0;
+
 /* ============================================================================
  * USB DESCRIPTORS
  * ============================================================================ */
@@ -281,6 +287,24 @@ int ps3_usb_open_endpoint(int endpoint_num) {
     return fd;
 }
 
+/* Runs from the BT thread - the USB threads block once the host goes quiet */
+int ps3_usb_check_suspend_timeout(void) {
+    if (!g_usb_enabled || g_suspend_since == 0) return 0;
+    if (time_get_ms() - g_suspend_since < SUSPEND_DISCONNECT_MS) return 0;
+    
+    printf("[USB] SUSPEND with no RESUME for %d ms - treating as disconnect\n",
+           SUSPEND_DISCONNECT_MS);
+    g_usb_enabled = 0;
+    g_suspend_since = 0;
+    
+    controller_output_t output;
+    controller_output_copy(&output);
+    output.rumble_left = 0;
+    output.rumble_right = 0;
+    controller_output_update(&output);
+    return 1;
+}
+
 void ps3_usb_cleanup(void) {
     ps3_usb_unbind();
 }
@@ -351,6 +375,7 @@ void* ps3_usb_control_thread(void* arg) {
                 g_usb_enabled = 1;
                 g_suspend_count = 0;  /* Reset suspend counter */
                 g_last_enable_time = time_get_ms();
+                g_suspend_since = 0;
                 
                 if (system_get_state() == SYSTEM_STATE_WAKING) {
                     printf("[USB] PS3 responded to wake\n");
@@ -370,9 +395,15 @@ void* ps3_usb_control_thread(void* arg) {
                 controller_output_update(&output);
                 break;
                 
+            case FUNCTIONFS_RESUME:
+                if (g_suspend_since) printf("[USB] RESUME\n");
+                g_suspend_since = 0;
+                break;
+
             case FUNCTIONFS_SUSPEND: {
                 g_suspend_count++;
                 uint64_t now = time_get_ms();
+                if (g_suspend_since == 0) g_suspend_since = now;
                 uint64_t time_since_enable = now - g_last_enable_time;
                 
                 printf("[USB] SUSPEND event #%d (USB stable for %llu ms)\n", 

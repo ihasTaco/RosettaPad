@@ -67,6 +67,9 @@ int ps3_usb_write_descriptors(int ep0_fd);
  */
 int ps3_usb_bind(void);
 
+/* Poll from a non-blocking loop; clears g_usb_enabled on unplug, returns 1 if it did */
+int ps3_usb_check_suspend_timeout(void);
+
 /**
  * Unbind gadget from UDC.
  */

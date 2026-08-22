@@ -10,6 +10,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <alloca.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -215,6 +216,11 @@ static int configure_adapter(void) {
     struct hci_dev_req dr = {.dev_id = dev_id, .dev_opt = SCAN_PAGE};
     ioctl(sock, HCISETSCAN, (unsigned long)&dr);
     
+    /* Default link policy: allow role switch + sniff so become_master() can
+     * request master on the PS3 link */
+    struct hci_dev_req lp = {.dev_id = dev_id, .dev_opt = HCI_LP_RSWITCH | HCI_LP_SNIFF};
+    ioctl(sock, HCISETLINKPOL, (unsigned long)&lp);
+    
     /* Read local address */
     if (hci_read_bd_addr(sock, &g_ps3_bt_ctx.local_addr, 1000) < 0) {
         perror("[BT] Failed to read local address");
@@ -308,6 +314,17 @@ static int create_l2cap_socket(uint16_t psm, const bdaddr_t* dest) {
         setsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &opts, sizeof(opts));
     }
     
+    /* The PS3 puts the HID link into sniff mode (11.25ms interval) like it
+     * does with a real DS3. By default the kernel exits sniff every time we
+     * have data to send, the PS3 re-requests it, and the link thrashes
+     * between modes with a stall at each transition. force_active=0 tells
+     * the kernel to leave the link in sniff and transmit at the anchor
+     * points the PS3 scheduled. */
+    struct bt_power pwr = {.force_active = 0};
+    if (setsockopt(sock, SOL_BLUETOOTH, BT_POWER, &pwr, sizeof(pwr)) < 0) {
+        perror("[BT] BT_POWER");
+    }
+    
     struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -335,6 +352,59 @@ static int create_l2cap_socket(uint16_t psm, const bdaddr_t* dest) {
     }
     
     return sock;
+}
+
+/*
+ * Become master of the PS3 link.
+ *
+ * The Pi is already master of its piconet with the DualSense. If the PS3 is
+ * master of the Pi<->PS3 link, the Pi is a slave in a second piconet
+ * (scatternet) and the radio has to time-slice between two hop sequences -
+ * btmon shows the PS3 link only getting serviced every 60-300ms. With the Pi
+ * as master of both, it schedules both slaves itself.
+ */
+static void become_master(void) {
+    int dev_id = hci_get_route(NULL);
+    int dd = hci_open_dev(dev_id);
+    if (dd < 0) {
+        perror("[BT] hci_open_dev for role switch");
+        return;
+    }
+    
+    /* Find the ACL handle for the PS3 */
+    struct hci_conn_info_req* cr = alloca(sizeof(*cr) + sizeof(struct hci_conn_info));
+    bacpy(&cr->bdaddr, &g_ps3_bt_ctx.ps3_addr);
+    cr->type = ACL_LINK;
+    if (ioctl(dd, HCIGETCONNINFO, (unsigned long)cr) < 0) {
+        perror("[BT] HCIGETCONNINFO");
+        hci_close_dev(dd);
+        return;
+    }
+    uint16_t handle = cr->conn_info->handle;
+    int is_master = cr->conn_info->link_mode & HCI_LM_MASTER;
+    printf("[BT] PS3 link handle=0x%03x role=%s\n", handle, is_master ? "MASTER" : "SLAVE");
+    
+    if (!is_master) {
+        if (hci_switch_role(dd, &g_ps3_bt_ctx.ps3_addr, 0x00 /* master */, 2000) < 0) {
+            perror("[BT] Role switch to master failed");
+        } else {
+            /* Re-read - the PS3 can refuse */
+            if (ioctl(dd, HCIGETCONNINFO, (unsigned long)cr) == 0) {
+                is_master = cr->conn_info->link_mode & HCI_LM_MASTER;
+                printf("[BT] After role switch: %s\n", is_master ? "MASTER" : "SLAVE (PS3 refused)");
+            }
+        }
+    }
+    
+    /* Clear the role-switch bit on this link so the PS3 can't flip it back.
+     * Keep SNIFF allowed so we don't break anything the PS3 expects. */
+    if (is_master) {
+        if (hci_write_link_policy(dd, handle, HCI_LP_SNIFF, 1000) < 0) {
+            perror("[BT] write_link_policy");
+        }
+    }
+    
+    hci_close_dev(dd);
 }
 
 /* ============================================================================
@@ -547,6 +617,7 @@ int ps3_bt_connect(void) {
     g_ps3_bt_ctx.connect_time = time_get_ms();
     
     printf("[BT] Connected to PS3\n");
+    become_master();
     
     /* Send initial reports */
     controller_state_t state;
@@ -649,11 +720,21 @@ void* ps3_bt_thread(void* arg) {
     int connect_requested = 0;
     int was_usb_connected = 0;
     uint64_t usb_disconnect_time = 0;
+    uint64_t next_attempt_ms = 0;
+    int attempts = 0;
     
-    /* Delay before attempting BT connection after USB disconnect (ms) */
-    #define BT_CONNECT_DELAY_MS 1000
+    /* Delay before first BT attempt after USB disconnect (ms) */
+    #define BT_CONNECT_DELAY_MS 250
+    /* Reconnect pacing: quick retries first, then settle to 1/s */
+    #define BT_RETRY_FAST_MS    250
+    #define BT_RETRY_FAST_COUNT 3
+    #define BT_RETRY_SLOW_MS    1000
+    /* PS3 must send F4 enable within this long of connect, else reconnect */
+    #define BT_F4_TIMEOUT_MS    2000
     
     while (g_running) {
+        ps3_usb_check_suspend_timeout();  /* USB unplug detection, see usb_gadget.c */
+        
         if (system_is_standby()) {
             usleep(100000);
             continue;
@@ -664,6 +745,8 @@ void* ps3_bt_thread(void* arg) {
                 if (g_usb_enabled) {
                     was_usb_connected = 1;
                     usb_disconnect_time = 0;
+                    attempts = 0;
+                    next_attempt_ms = 0;
                 }
                 
                 /* Track when USB disconnected */
@@ -671,35 +754,76 @@ void* ps3_bt_thread(void* arg) {
                     usb_disconnect_time = time_get_ms();
                 }
                 
-                /* Connect after USB has been disconnected for a while */
+                /* Connect once USB has been gone for BT_CONNECT_DELAY_MS,
+                 * then keep retrying until it sticks or USB comes back */
                 if (was_usb_connected && !g_usb_enabled && !connect_requested && 
                     ds3_has_ps3_mac() && usb_disconnect_time > 0) {
                     
-                    uint64_t elapsed = time_get_ms() - usb_disconnect_time;
-                    if (elapsed >= BT_CONNECT_DELAY_MS) {
+                    uint64_t now = time_get_ms();
+                    if (now - usb_disconnect_time >= BT_CONNECT_DELAY_MS && now >= next_attempt_ms) {
+                        attempts++;
                         if (!system_is_standby() && ps3_bt_connect() == 0) {
                             connect_requested = 1;
+                        } else {
+                            next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
+                                                     ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
                         }
                     }
                 }
-                usleep(100000);
+                usleep(50000);
                 break;
                 
             case BT_STATE_READY:
             case BT_STATE_ENABLED:
-                /* Auto-enable after timeout */
-                if (g_ps3_bt_ctx.state == BT_STATE_READY) {
-                    static int ready_count = 0;
-                    if (++ready_count >= 50) {
-                        g_ps3_bt_ctx.state = BT_STATE_ENABLED;
-                        ready_count = 0;
-                    }
+                /* The PS3 only honors input after it sends F4 enable. If it
+                 * never does (happens after an unclean previous session), a
+                 * fresh connection is what fixes it - so do that ourselves. */
+                if (g_ps3_bt_ctx.state == BT_STATE_READY &&
+                    time_get_ms() - g_ps3_bt_ctx.connect_time >= BT_F4_TIMEOUT_MS) {
+                    printf("[BT] No F4 enable from PS3 within %d ms - reconnecting\n", BT_F4_TIMEOUT_MS);
+                    ps3_bt_disconnect();
+                    connect_requested = 0;
+                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
+                    continue;
                 }
                 
                 if (process_control() < 0 || process_interrupt() < 0) {
+                    printf("[BT] Link dropped - reconnecting\n");
                     ps3_bt_disconnect();
                     connect_requested = 0;
+                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
                     continue;
+                }
+                
+                /* Once-a-second link stats. outq = bytes still queued in the
+                 * kernel L2CAP send buffer; est.queue = how long a report sent
+                 * now waits behind that backlog. est.in->air adds the 25Hz
+                 * gate (~20ms avg) and DS5->Pi (~4ms); PS3-side is unknown. */
+                {
+                    static uint64_t stat_last_ms = 0;
+                    static uint32_t stat_last_sent = 0, stat_last_drop = 0;
+                    static int stat_last_outq = 0;
+                    uint64_t now = time_get_ms();
+                    if (stat_last_ms == 0) stat_last_ms = now;
+                    if (g_ps3_bt_ctx.state == BT_STATE_ENABLED && now - stat_last_ms >= 1000) {
+                        int outq = 0;
+                        ioctl(g_ps3_bt_ctx.intr_sock, TIOCOUTQ, &outq);
+                        uint32_t sent = g_ps3_bt_ctx.packets_sent - stat_last_sent;
+                        uint32_t drop = g_ps3_bt_ctx.packets_dropped - stat_last_drop;
+                        double secs = (now - stat_last_ms) / 1000.0;
+                        int sent_bytes = sent * DS3_BT_INPUT_REPORT_SIZE;
+                        int drained = sent_bytes - (outq - stat_last_outq);
+                        double drain_rate = drained > 0 ? drained / secs : 0;
+                        double q_delay = drain_rate > 0 ? outq / drain_rate : (outq ? 99.0 : 0);
+                        printf("[BT STAT] tx=%.0f/s drop=%.0f/s outq=%dB drain=%.0fB/s  "
+                               "est.queue=%.2fs  est.in->air=%.2fs\n",
+                               sent / secs, drop / secs, outq, drain_rate,
+                               q_delay, q_delay + 0.024);
+                        stat_last_ms = now;
+                        stat_last_sent = g_ps3_bt_ctx.packets_sent;
+                        stat_last_drop = g_ps3_bt_ctx.packets_dropped;
+                        stat_last_outq = outq;
+                    }
                 }
                 usleep(10000);
                 break;
@@ -707,7 +831,7 @@ void* ps3_bt_thread(void* arg) {
             case BT_STATE_ERROR:
                 ps3_bt_disconnect();
                 connect_requested = 0;
-                sleep(5);
+                next_attempt_ms = time_get_ms() + BT_RETRY_SLOW_MS;
                 break;
                 
             default:
