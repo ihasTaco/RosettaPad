@@ -1,227 +1,156 @@
 # RosettaPad
 
-**Universal Controller Adapter for PlayStation Consoles**
+**Use a DualSense controller on your PS3 to get working PS (Home) button and rumble!**
 
-RosettaPad lets you use modern controllers (DualSense, and eventually others) on older PlayStation consoles with full feature support, including the PS button, rumble, and motion controls that typically don't work with third-party adapters.
+RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, rumble, battery status) work as expected. Setup takes about 15 minutes.
 
 > [!NOTE]
-> **Current Status**: Development is currently active for DualSense and PS3. There is a long-term goal to get this working on other Sony consoles and *maybe* Nintendo/Microsoft platforms, but that is not in scope for this project at the moment.
+> **Current Status**: Currently RosettaPad is active for DualSense (PS5/DS5) controller support on the PS3. 
+> I would like to expand to more controllers and systems, but for now the scope is one controller, one system, and some tools that will help make adding your favorite controllers easier.
 
 <details>
 <summary> View Directory </summary>
-  
-* [Why RosettaPad?](#why-rosettapad)  
+
+* [What's the Point?](#whats-the-point)  
 * [Features](#features)  
-  * [What Works Now](#what-works-now)  
-  * [In Progress](#in-progress)  
-  * [Planned](#planned)
-* [Hardware Requirements](#hardware-requirements)  
-* [Quick Start](#quick-start)  
-  * [1. Install](#1-install)  
-  * [2. Pair Your Controller](#2-pair-your-controller)  
-  * [3. Connect to PS3 & Run](#3-connect-to-ps3--run)  
-* [Boot Configuration](#boot-configuration)  
-* [Technical Details](#technical-details)  
-  * [How DS3 Emulation Works](#how-ds3-emulation-works)  
-  * [PS3 Initialization Sequence](#ps3-initialization-sequence)  
-  * [Motion Controls & Wake](#motion-controls--wake)  
-  * [File Locations](#file-locations)  
+  * [What Works Right Now?](#what-works-right-now)  
+  * [What's In Progress?](#whats-in-progress)  
+  * [What's Planned?](#whats-planned)
+  * [What Can't Be Emulated](#what-cant-be-emulated)
+* [Setup](#setup)
+  * [Hardware Requirements](#hardware-requirements)
+  * [Quick Start](#quick-start)  
 * [Troubleshooting](#troubleshooting)  
   * [Controller not detected](#controller-not-detected)  
-  * [PS3 not recognizing adapter](#ps3-not-recognizing-adapter)  
   * [Buttons not working](#buttons-not-working)  
-  * [High latency / Motion controls not working](#high-latency)  
+  * [High latency / Motion controls not working](#high-latency-over-bluetooth)  
+* [Credits & Attributions](#credits--attributions)  
 * [Contributing](#contributing)  
-* [Credits / Resources](#credits)  
 * [License](#license)  
 </details>
 
----
+## What's the Point?
+You may be asking, **"I can connect my DualSense/DS4/Wildcatz/8BitDo controllers to the PS3 right now."**   
+Yep.
 
-## Why RosettaPad?
+So the PS3 is kinda dumb, well at least the gamepad driver is. If it isn't specifically a DualShock 3 controller, it deems the controller "generic" and switches to an all purpose gamepad driver that disables stuff like PS button, rumble, motion controls, etc. So if for some reason you wanted to exit a game and go to the XMB, you just.... can't.  
 
-When you connect a DualSense to a PS3, it *technically* works, but the PS3 doesn't know how to talk to it properly. The PS button does nothing, rumble is silent, and motion controls are dead.
-
-RosettaPad solves this by acting as a translator: it presents itself to the PS3 as a genuine DualShock 3 while accepting input from your modern controller. No authentication cracking required, just proper protocol emulation.
-
----
+Okay, so I'm kinda cheap and didn't really want to buy a thing to plug in and have it just *work* when I could probably just make it myself. It probably would've cost me $50, and then I'd have to wait like 2 days 🤮 So instead I spent every waking moment for a month reading as much material as I can find on the dualshock 3 HID and bluetooth handshake, doing my own testing, and finally building RosettaPad.   
+Was it worth it? Probably not lol I later found out that there is some other projects doing pretty similar things, but they needed needlessly complicated steps to setup. I also wanted to add some features they didn't have. Mostly what intrigued me was a TAS system (TBD) I don't know if it will be useful, but it will be cool and thats all that matters to me.
 
 ## Features
 
-### What Works Now
+What should you expect if you setup RosettaPad right now?
+
+Setup for RosettaPad takes about 15 minutes from start to finish. Once setup you will have all the features you'd expect on a normal DualShock 3 controller but on a DualSense, including the home button and rumble working with a few features thrown in on top like a usable trackpad that works as a precision right analog stick.  
+
+> [!IMPORTANT]
+> The only exception to the above is Pi to PS3 bluetooth connectivity is required to enable some features like motion controls (sixaxis) and wake from standby. Thankfully this has mostly been solved and implemented already into RosettaPad! But... Pi to PS3 over bluetooth has **~1 second latency** and I have not been able to figure out how to lower that yet.  
+> Until the latency issue is fixed, bluetooth has been disabled. Which means any games that require motion controls, won't work :/ 
+
+So, can you use a DualSense on a PS3? For the most part, yes! It works great with RosettaPad.
+
+### What Works Right Now?
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| DualSense to Pi Bluetooth | ✅ | Works without issues. |
-| Pi to PS3 USB | ✅ | Works without issues. |
-| All Buttons | ✅ | Face, D-pad, shoulders, triggers, sticks, PS button. |
-| Analog Sticks | ✅ | Full 8-bit precision. |
-| Analog Triggers | ✅ | Pressure-sensitive L2/R2. |
-| Rumble | ✅ | Both motors, tested on PS3 games. |
-| Battery Display | ✅ | Uses DualSense's current battery info (Charging, charged, battery level) and displays in PS3 UI |
+| DualSense to Raspberry Pi connection via bluetooth | ✅ | Works without issues. |
+| Raspberry Pi to PS3 connection via USB | ✅ | Works without issues. |
+| PS3 to Raspberry Pi bluetooth handshake | ✅ | Works without issues. Please see [In Progress](#whats-in-progress) for information on Raspberry Pi to PS3 connection via bluetooth |
+| Complete button translation | ✅ | Works without issues. This includes all face, d-pad, shoulders, triggers, and PS button. See [What Can't Be Emulated](#what-cant-be-emulated) |
+| Complete analog input translation | ✅ | Works without issues. This includes analog sticks and analog triggers. |
+| Rumble | ✅ | Both motors work without issues |
+| Battery display on PS3 | ✅ | I know this is a small feature, but im proud of this one lol. The DualSense sends current battery status (Whether it is plugged in and charging, charged, or discharging) and it gets displayed in the PS3 UI. |
 
-### In Progress
-
-| Feature | Status | Notes |
-|---------|:------:|-------|
-| Pi to PS3 Bluetooth | Issues | Pi to PS3 bluetooth works but there is high latency issues. It is not recommended to use Pi to PS3 bluetooth. |
-| Motion Controls | Issues | Technically works, there is current calibration issues that causes extreme values. Motion controls also only work over bluetooth, recommended not to use until bluetooth issues are fixed. |
-| PS3 Wake from Standby | Issues | Works too well. While pi is connected to ps3 over bluetooth, when you turn the ps3 off the pi will just continuously turn back on. Need to add checks to see if controller is connected and the PS button was pressed before turning on. |
-| Touchpad as Right Stick | Needs Work | Meh :/ It works but isn't as precise as I'd like. Needs calibration. |
-
-### Planned
+### What's In Progress?
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| Web Configuration Panel | Started | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
-| Pico 2W Port | Started | [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
-| Button Remapping | Not Started | Architecture ready, UI needed |
-| DualSense Adaptive triggers | Not Started | N/A |
-| Lightbar Customization | Not Started | N/A |
-| Macros | Not Started | N/A |
-| Additional controller support | Not Started | N/A |
-| Additional console support | Not Started | N/A |
-| TAS recording, editing & playback | Not Started | N/A |
+| Safe Mode | 🚧 | Works but needs a service restart in order to be detected, want to make this automatic |
+| Raspberry Pi to PS3 connection via bluetooth | ⚠️ | It works... if you count a second of latency as working. It's advised not to use bluetooth at the moment |
+| Motion controls | ⚠️ | Technically works, but there is currently an issue that causes extreme values. **Note:** Motion controls only work when Pi to PS3 is active. Bluetooth is top priority to get working right, then this. | 
+| PS3 Wake from Standby | ⚠️ | This works a little too well right now. While the Pi is connected to the PS3 over bluetooth, the Pi continuously sends power on packets to the PS3, and keeps turning the PS3 on. This feature is disabled for now while the Pi is connected via USB (See [How to use bluetooth](#todo) on what not to do to prevent this) |
+| Touchpad as precision right stick | 🚧 | It works, just not as well as I hoped | 
 
----
+### What's Planned?
 
-## Hardware Requirements
+| Feature | Status | Notes |
+|---------|:------:|-------|
+| Web Configuration Panel | ⏸️ | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
+| Pico 2W Port | ⏸️ | Want to get Zero 2 W bluetooth working first - [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
+| Button Remapping | ✖️ | Architecture ready, UI needed |
+| DualSense Adaptive triggers | ✖️ | N/A - Waiting for Web Configuration Panel |
+| Lightbar Customization | ✖️ | N/A - Waiting for Web Configuration Panel |
+| Macros | ✖️ | N/A - Waiting for Web Configuration Panel |
+| TAS recording, editing & playback | ✖️ | N/A - Waiting for Macros |
+| Additional controller support | ✖️ | N/A - Waiting for Pi to PS3 connection via bluetooth |
+| Additional console support | ✖️ | N/A - The codebase is modular enough this can be started at anytime. Want to get PS3 sorted first. |
 
-- **Raspberry Pi Zero 2W (or Zero W)**
-- **USB data cable** - connects Pi's data port to PS3
-- **USB power cable** - connects Pi's power port to a power source
-- **DualSense controller** - paired via Bluetooth
+### What Can't Be Emulated
 
-> **Important:** The Pi Zero 2W has two micro-USB ports. The one labeled "USB" is for data; the one labeled "PWR" is power-only. You need data connected to the PS3.
+For the most part, the only thing RosettaPad can't emulate (see below) is the pressure sensitive face buttons. This is mostly due to the fact that the DualSense (and DualShock 4) controller does not have pressure sensitive face buttons. 
 
----
+In the case where the controller does not have pressure sensitive buttons, RosettaPad will just map the pressure sensitive bits to 00 (for not pressed) or FF (for pressed).
 
-## Quick Start
+**If you require this functionality**, you will need to get a controller that has pressure sensitive buttons. (Then RosettaPad can map those to the correct DualShock 3 layout)
 
-### 0. USB Gadget Mode
-[Follow these instructions](#boot-configuration)
+[Here's a list of games that use pressure sensitive buttons](https://emulation.gametechwiki.com/index.php/List_of_console_games_that_support_pressure-sensitive_buttons#PlayStation_3). 
 
-### 1. Install
+## Setup
 
-```bash
+> [!TIP]
+> **New to this? Is the quick start guide *too* quick?**  
+> You can find more detailed instructions that go step-by step from beginning to end [here](#todo). Just in case you need them.
+
+### Hardware Requirements
+
+- **Raspberry Pi Zero 2W (or Zero W)** - Minor testing has been done on Zero W, but it does work.
+- **An SD Card** - I think anything over 8gb is overkill.
+- **Micro USB data cable** - Connects Raspberry Pi's "USB" port to PS3. 
+- **Micro USB power cable** - Connects Raspberry Pi's "PWR In" port to any power source. (recommended not to plug this into PS3. The PS3 turns off power to USB ports when it's off. This may not be needed in future updates of RosettaPad, if you see this, it's still required.)
+- **DualSense controller** - See [How to pair the controller via bluetooth](#todo)
+- **A computer** - Needed to flash Raspberry Pi OS and configure RosettaPad.
+- **SD Card reader** - Only needed to flash Raspberry Pi OS
+
+### Quick Start
+
+1. Flash Raspberry Pi OS Lite (64-bit) for Zero 2W or OS Lite (32-bit) for Zero W.
+2. Update system and install Git:
+``` bash
+sudo apt update && sudo apt upgrade -y && sudo apt install -y git
+```
+3. Install RosettaPad:
+``` bash
 git clone https://github.com/ihasTaco/RosettaPad.git
 cd RosettaPad
-chmod +x install.sh
-./install.sh
+chmod +x install_debian.sh
+sudo ./install_debian.sh
 ```
-
-### 2. Pair Your Controller
-
-Eventually I would like to make a web interface for this, but for now you'll need to do this manually.
-
-```bash
-bluetoothctl
+4. The install script will update the system, install dependencies, enable usb gadget mode, build the source into an executable and finally create a service for you before rebooting.
+5. Once back up, run `bluetoothctl`, then: 
+``` bash 
 scan on
 # Put DualSense in pairing mode: hold Create + PS until light flashes rapidly
+# Replace XX:XX:XX:XX:XX:XX with your controllers MAC address.
 pair XX:XX:XX:XX:XX:XX
 trust XX:XX:XX:XX:XX:XX
 connect XX:XX:XX:XX:XX:XX
 quit
 ```
-
-### 3. Connect to PS3 & Run
-
-Plug the Pi into the PS3 via the data port
-
-```bash
-# Manual
-sudo rosettapad
-
-# Or as a service
-sudo systemctl start rosettapad
-sudo systemctl enable rosettapad  # Start on boot
-```
-
----
-
-## Boot Configuration
-
-These settings are required for USB gadget mode:
-
-`/boot/firmware/config.txt` - add this line:
-```
-dtoverlay=dwc2,dr_mode=peripheral
-```
-
-`/boot/firmware/cmdline.txt` - append to the end (same line):
-```
-modules-load=dwc2
-```
-
----
-
-## Technical Details
-
-### How DS3 Emulation Works
-
-The PS3 doesn't require cryptographic authentication for DS3 controllers. It just needs:
-
-1. Correct USB VID/PID (`054c:0268`)
-2. Proper responses to feature report requests (0x01, 0xF2, 0xF5, 0xF7, 0xF8, 0xEF)
-3. Echo back the 0xEF configuration report exactly as received
-4. Send 49-byte input reports on the interrupt IN endpoint
-5. Receive output reports (LED/rumble) on the interrupt OUT endpoint
-
-### PS3 Initialization Sequence
-
-```
-1. SET_IDLE
-2. GET_REPORT 0x01  → Device capabilities
-3. GET_REPORT 0xF2  → Controller Bluetooth MAC
-4. GET_REPORT 0xF5  → Host Bluetooth MAC
-5. SET_REPORT 0xEF  → Configuration (must echo back)
-6. GET_REPORT 0xF8  → Status
-7. GET_REPORT 0xF7  → Calibration data
-8. SET_REPORT 0xF4  → LED configuration
-9. Normal input/output exchange begins
-```
-
-### Motion Controls & Wake
-
-The PS3 only sends the SIXAXIS enable command (0xF4) over Bluetooth, not USB. RosettaPad maintains a parallel Bluetooth L2CAP connection to the PS3 for:
-- Receiving the motion enable command
-- Sending accelerometer/gyroscope data
-- Waking the PS3 from standby
-
-### File Locations
-
-| Path | Description |
-|------|-------------|
-| `/opt/rosettapad/` | Installation directory |
-| `/usr/local/bin/rosettapad` | Symlink to executable |
-| `/etc/systemd/system/rosettapad.service` | Systemd service |
-| `/tmp/rosettapad/` | Runtime state (IPC, cached MAC) |
-
----
+6. Plug the Pi into the PS3 via the data port.
+7. Done!
 
 ## Troubleshooting
 
 ### Controller not detected
 
-```bash
+``` bash
 # Check if DualSense is connected
 ls /dev/hidraw*
 
 # Verify it's the right device
 cat /sys/class/hidraw/hidraw*/device/uevent | grep -E "HID_NAME|PRODUCT"
 # Should show: 054C:0CE6 (Sony DualSense)
-```
-
-### PS3 not recognizing adapter
-
-You will need to modify some setting on the pi before it will get recognized by the PS3: (USB Gadget mode](#boot-configuration)
-
-```bash
-# Check USB gadget status
-ls /sys/kernel/config/usb_gadget/ds3/
-
-# Check for errors
-dmesg | tail -30 | grep -i usb
 ```
 
 ### Buttons not working
@@ -234,40 +163,17 @@ dmesg | tail -30 | grep -i usb
 This is a known issue, it is recommended to not connect the pi to the PS3 via bluetooth.  
 **Some games that require motion controls will not work until latency issues are fixed.**  
 
-**Notes for contributors:**  
-I have a few theories on the latency issues:
+## Credits & Attributions
 
-Currently, the DS3 Emulation thread is handling the conversion logic and creating the reports before sending to the PS3.
-I think the controller thread should handle the conversion and report writing for a few reasons: 
- * The DS3 thread would immediately send the latest report as soon as it's ready.  
- * The conversion logic would be kept contained per controllers, so new controllers added wouldn't need to touch DS3 emulation logic. 
-
-The Pi Zero 2W uses a single chip for both wifi and bluetooth. The current setup has both running simultaneously and I think that could cause some latency issues.
-Implementing a way to shut off wifi when not in use may help. I am thinking of implementing a system that will turn on wifi during first boot and when a controller is not connected, then shut it off afterwards, and setting up a key bind on the controller will toggle wifi manually.
- * Since the project is only supporting DS5 for now, holding the Mute button on the controller for 5 seconds will toggle wifi.
- * Toggling wifi will be denoted by rumble and light animations.
-
-The code is currently hardcoding a 40ms delay between sending reports, I believe the DS3 sends reports every 10ms. 
-I think by dropping the delay to 10ms and the above fixes could allow low latency without dropped inputs. 
-
----
+- [Eleccelerator Wiki](https://eleccelerator.com/wiki/index.php?title=DualShock_3) - DualShock 3 protocol documentation
+- [Linux hid-sony driver](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-sony.c) - Reference implementation
+- [USB Host Shield Library](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp) - SIXAXIS enable details
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues and pull requests.
 
----
-
-## Credits
-
-- [Eleccelerator Wiki](https://eleccelerator.com/wiki/index.php?title=DualShock_3) - DS3 protocol documentation
-- [Linux hid-sony driver](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-sony.c) - Reference implementation
-- [USB Host Shield Library](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp) - SIXAXIS enable details
-
----
-
 ## License
 
-This project is open source. See [LICENSE](LICENSE) for details.
-
+See [LICENSE](LICENSE) for details.
 If you use protocol documentation or findings from this project, please provide attribution by linking back to this repository.

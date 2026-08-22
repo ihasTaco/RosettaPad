@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "core/common.h"
 
@@ -272,6 +273,11 @@ void controller_clear_active(void) {
     g_active_driver = NULL;
 }
 
+/* Backoff on send failure: 50ms -> 100 -> 200 -> 400 -> 500 cap, then drop */
+#define OUTPUT_BACKOFF_MIN_MS   50
+#define OUTPUT_BACKOFF_MAX_MS   500
+#define OUTPUT_MAX_FAILURES     5
+
 void* controller_output_thread(void* arg) {
     (void)arg;
     
@@ -280,8 +286,11 @@ void* controller_output_thread(void* arg) {
     controller_output_t last_output = {0};
     int ipc_counter = 0;
     int consecutive_failures = 0;
+    uint64_t next_send_ms = 0;
+    uint32_t backoff_ms = OUTPUT_BACKOFF_MIN_MS;
     
     while (g_running) {
+        uint64_t now_ms = time_get_ms();
         /* Check for lightbar IPC updates every ~500ms */
         if (++ipc_counter >= 50) {
             ipc_counter = 0;
@@ -306,22 +315,35 @@ void* controller_output_thread(void* arg) {
             output.player_leds != last_output.player_leds
         );
         
-        /* Send output if changed and we have an active controller */
-        if (changed && g_active_driver && g_controller_fd >= 0) {
+        /* Send output if changed and we have an active controller.
+         *
+         * On failure we back off instead of retrying every tick: hammering a
+         * saturated BT link with retries is what keeps it saturated. After
+         * MAX_FAILURES we drop the update entirely - rumble is momentary and
+         * the game will send the next one; LED state re-sends on next change
+         * or on the driver's periodic refresh. */
+        if (changed && g_active_driver && g_controller_fd >= 0 &&
+            now_ms >= next_send_ms) {
             if (g_active_driver->send_output) {
                 int ret = g_active_driver->send_output(g_controller_fd, &output);
                 if (ret < 0) {
                     consecutive_failures++;
-                    /* Only log after several failures to reduce noise */
-                    if (consecutive_failures == 5) {
-                        printf("[Output] Warning: Multiple output send failures\n");
+                    if (consecutive_failures == OUTPUT_MAX_FAILURES) {
+                        printf("[Output] Send failing (errno=%d), dropping update\n", errno);
+                        last_output = output;      /* give up on this one */
+                        consecutive_failures = 0;
+                        backoff_ms = OUTPUT_BACKOFF_MIN_MS;
+                    } else {
+                        next_send_ms = now_ms + backoff_ms;
+                        backoff_ms *= 2;
+                        if (backoff_ms > OUTPUT_BACKOFF_MAX_MS) backoff_ms = OUTPUT_BACKOFF_MAX_MS;
                     }
-                    /* Don't update last_output so we retry */
                 } else {
-                    if (consecutive_failures >= 5) {
+                    if (consecutive_failures > 0) {
                         printf("[Output] Output send recovered\n");
                     }
                     consecutive_failures = 0;
+                    backoff_ms = OUTPUT_BACKOFF_MIN_MS;
                     last_output = output;
                 }
             } else {
