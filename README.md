@@ -66,6 +66,7 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
+| Safe Mode | 🚧 | Works but needs a service restart in order to be detected, want to make this automatic |
 | Raspberry Pi to PS3 connection via bluetooth | ⚠️ | It works... if you count a second of latency as working. It's advised not to use bluetooth at the moment |
 | Motion controls | ⚠️ | Technically works, but there is currently an issue that causes extreme values. **Note:** Motion controls only work when Pi to PS3 is active. Bluetooth is top priority to get working right, then this. | 
 | PS3 Wake from Standby | ⚠️ | This works a little too well right now. While the Pi is connected to the PS3 over bluetooth, the Pi continuously sends power on packets to the PS3, and keeps turning the PS3 on. This feature is disabled for now while the Pi is connected via USB (See [How to use bluetooth](#todo) on what not to do to prevent this) |
