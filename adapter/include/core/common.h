@@ -21,6 +21,7 @@
 
 /* Main run flag - set to 0 to trigger shutdown */
 extern volatile int g_running;
+extern int g_verbose;  /* -v / ROSETTAPAD_VERBOSE=1: extra diagnostics (e.g. [BT STAT]) */
 
 /* ============================================================================
  * SYSTEM STATE MACHINE

@@ -201,8 +201,17 @@ void* controller_input_thread(void* arg) {
  * ============================================================================ */
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+            g_verbose = 1;
+        } else {
+            fprintf(stderr, "Usage: %s [-v|--verbose]\n", argv[0]);
+            return 1;
+        }
+    }
+    const char* env = getenv("ROSETTAPAD_VERBOSE");
+    if (env && env[0] == '1') g_verbose = 1;
+    if (g_verbose) printf("[Main] Verbose diagnostics on\n");
     
     pthread_t input_tid;
     pthread_t output_tid;

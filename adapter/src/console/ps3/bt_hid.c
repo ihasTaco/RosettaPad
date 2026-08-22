@@ -799,7 +799,7 @@ void* ps3_bt_thread(void* arg) {
                  * kernel L2CAP send buffer; est.queue = how long a report sent
                  * now waits behind that backlog. est.in->air adds the 25Hz
                  * gate (~20ms avg) and DS5->Pi (~4ms); PS3-side is unknown. */
-                {
+                if (g_verbose) {
                     static uint64_t stat_last_ms = 0;
                     static uint32_t stat_last_sent = 0, stat_last_drop = 0;
                     static int stat_last_outq = 0;
