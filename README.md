@@ -72,14 +72,14 @@ So, can you use a DualSense on a PS3? Yes! It works great with RosettaPad.
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| Web Configuration Panel | ⏸️ | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
+| Web Configuration Panel | 👀 | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
 | Pico 2W Port | ⏸️ | [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
 | Button Remapping | ✖️ | Architecture ready, UI needed |
 | DualSense Adaptive triggers | ✖️ | N/A - Waiting for Web Configuration Panel |
 | Lightbar Customization | ✖️ | N/A - Waiting for Web Configuration Panel |
 | Macros | ✖️ | N/A - Waiting for Web Configuration Panel |
 | TAS recording, editing & playback | ✖️ | N/A - Waiting for Macros |
-| Additional controller support | ✖️ | N/A |
+| Additional controller support | 👀 | N/A |
 | Additional console support | ✖️ | N/A |
 
 ### What Can't Be Emulated
