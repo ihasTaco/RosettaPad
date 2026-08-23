@@ -2,7 +2,7 @@
 
 **Use a DualSense controller on your PS3 to get working PS (Home) button and rumble!**
 
-RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, rumble, battery status) work as expected. Setup takes about 15 minutes.
+RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, motion controls, rumble, battery status) work as expected. Setup takes about 15 minutes.
 
 > [!NOTE]
 > **Current Status**: Currently RosettaPad is active for DualSense (PS5/DS5) controller support on the PS3. 
@@ -42,9 +42,9 @@ Was it worth it? Probably not lol I later found out that there is some other pro
 
 What should you expect if you setup RosettaPad right now?
 
-Setup for RosettaPad takes about 15 minutes from start to finish. Once setup you will have all the features you'd expect on a normal DualShock 3 controller but on a DualSense, including the home button and rumble working with a few features thrown in on top like a usable trackpad that works as a precision right analog stick.  
+Setup for RosettaPad takes about 15 minutes from start to finish. Once setup you will have all the features you'd expect on a normal DualShock 3 controller but on a DualSense, including the home button, motion controls and rumble working with a few features thrown in on top like a usable trackpad that works as a precision right analog stick.  
 
-So, can you use a DualSense on a PS3? For the most part, yes! It works great with RosettaPad.
+So, can you use a DualSense on a PS3? Yes! It works great with RosettaPad.
 
 ### What Works Right Now?
 
@@ -53,7 +53,7 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | DualSense to Raspberry Pi connection via bluetooth | ✅ | Works without issues. |
 | Raspberry Pi to PS3 connection via USB | ✅ | Works without issues. |
 | Raspberry Pi to PS3 connection via bluetooth | ✅ | Works without issues. |
-| Motion controls | ✅ | Works without issues. | 
+| Motion controls (Sixaxis) | ✅ | Works. Axis orientation tuned against a real DS3 | 
 | Complete button translation | ✅ | Works without issues. This includes all face, d-pad, shoulders, triggers, and PS button. See [What Can't Be Emulated](#what-cant-be-emulated) |
 | Complete analog input translation | ✅ | Works without issues. This includes analog sticks and analog triggers. |
 | Rumble | ✅ | Both motors work without issues |
@@ -73,14 +73,14 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | Feature | Status | Notes |
 |---------|:------:|-------|
 | Web Configuration Panel | ⏸️ | Backend API stubbed, frontend in progress - [Dev Web Panel Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-web-panel) |
-| Pico 2W Port | ⏸️ | Want to get Zero 2 W bluetooth working first - [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
+| Pico 2W Port | ⏸️ | [Dev Pico Port Branch](https://github.com/ihasTaco/RosettaPad/tree/dev-pico-port) |
 | Button Remapping | ✖️ | Architecture ready, UI needed |
 | DualSense Adaptive triggers | ✖️ | N/A - Waiting for Web Configuration Panel |
 | Lightbar Customization | ✖️ | N/A - Waiting for Web Configuration Panel |
 | Macros | ✖️ | N/A - Waiting for Web Configuration Panel |
 | TAS recording, editing & playback | ✖️ | N/A - Waiting for Macros |
-| Additional controller support | ✖️ | N/A - Waiting for Pi to PS3 connection via bluetooth |
-| Additional console support | ✖️ | N/A - The codebase is modular enough this can be started at anytime. Want to get PS3 sorted first. |
+| Additional controller support | ✖️ | N/A |
+| Additional console support | ✖️ | N/A |
 
 ### What Can't Be Emulated
 
@@ -153,11 +153,6 @@ cat /sys/class/hidraw/hidraw*/device/uevent | grep -E "HID_NAME|PRODUCT"
 
 - The DualSense creates multiple hidraw devices; RosettaPad automatically finds the correct one (VID `054c`, PID `0ce6`)
 - Ensure the controller is connected via Bluetooth, not USB
-
-### High latency over bluetooth
-
-This is a known issue, it is recommended to not connect the pi to the PS3 via bluetooth.  
-**Some games that require motion controls will not work until latency issues are fixed.**  
 
 ## Credits & Attributions
 
