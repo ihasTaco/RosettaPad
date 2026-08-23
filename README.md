@@ -23,20 +23,21 @@ RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense 
 * [Troubleshooting](#troubleshooting)  
   * [Controller not detected](#controller-not-detected)  
   * [Buttons not working](#buttons-not-working)  
-  * [High latency / Motion controls not working](#high-latency-over-bluetooth)  
 * [Credits & Attributions](#credits--attributions)  
-* [Contributing](#contributing)  
+* [Contribution](#contribution)  
 * [License](#license)  
 </details>
 
 ## What's the Point?
-You may be asking, **"I can connect my DualSense/DS4/Wildcatz/8BitDo controllers to the PS3 right now."**   
+You may be asking, **"I can connect my DualSense/DS4/8BitDo controllers to the PS3 right now."**   
 Yep.
 
 So the PS3 is kinda dumb, well at least the gamepad driver is. If it isn't specifically a DualShock 3 controller, it deems the controller "generic" and switches to an all purpose gamepad driver that disables stuff like PS button, rumble, motion controls, etc. So if for some reason you wanted to exit a game and go to the XMB, you just.... can't.  
 
 Okay, so I'm kinda cheap and didn't really want to buy a thing to plug in and have it just *work* when I could probably just make it myself. It probably would've cost me $50, and then I'd have to wait like 2 days 🤮 So instead I spent every waking moment for a month reading as much material as I can find on the dualshock 3 HID and bluetooth handshake, doing my own testing, and finally building RosettaPad.   
-Was it worth it? Probably not lol I later found out that there is some other projects doing pretty similar things, but they needed needlessly complicated steps to setup. I also wanted to add some features they didn't have. Mostly what intrigued me was a TAS system (TBD) I don't know if it will be useful, but it will be cool and thats all that matters to me.
+Was it worth it? Probably not lol
+
+Basically, I wanted a free alternative to something like the Brook Wingman XE2, Mayflash Magic-S and GIMX adapters that are expensive or needlessly complicated to setup.
 
 ## Features
 
@@ -160,9 +161,9 @@ cat /sys/class/hidraw/hidraw*/device/uevent | grep -E "HID_NAME|PRODUCT"
 - [Linux hid-sony driver](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-sony.c) - Reference implementation
 - [USB Host Shield Library](https://github.com/felis/USB_Host_Shield_2.0/blob/master/PS3USB.cpp) - SIXAXIS enable details
 
-## Contributing
+## Contribution
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues and pull requests.
+See [CONTRIBUTION.md](CONTRIBUTION.md) for guidelines on submitting issues and pull requests.
 
 ## License
 
