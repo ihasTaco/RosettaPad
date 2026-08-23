@@ -117,6 +117,17 @@ void* controller_input_thread(void* arg) {
                 printf("[Input] Controller connected: %s\n", g_active_driver->info->name);
                 controller_set_active(g_controller_fd, g_active_driver);
                 controller_set_active_driver(g_active_driver);
+                
+                /* A controller showing up while we're in standby is the wake
+                 * signal itself - the user pressed PS to turn it on, and by
+                 * the time it reconnects that press is long over, so the
+                 * rising-edge check below would never see it. Same as a
+                 * real PS3: the controller connecting is what wakes it. */
+                if (system_is_standby()) {
+                    printf("[Input] Controller connected in standby - waking PS3\n");
+                    g_last_home_press_time = time_get_ms();
+                    system_exit_standby();
+                }
             } else {
                 sleep(1);
             }

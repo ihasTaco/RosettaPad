@@ -69,6 +69,33 @@ static int can_change_state(void) {
 extern void ps3_bt_disconnect(void);
 extern int ps3_bt_wake(void);
 
+/* Active controller handle - set by controller_set_active() below */
+static int g_controller_fd = -1;
+static const controller_driver_t* g_active_driver = NULL;
+
+/*
+ * Turn the controller off, the way a DS3 turns off when the PS3 does.
+ * Returns 1 if the driver powered it off, 0 if it only dimmed (no power_off
+ * hook) - caller uses that to pick the right log line.
+ */
+static int controller_power_off(void) {
+    if (g_active_driver && g_active_driver->power_off && g_controller_fd >= 0) {
+        g_active_driver->power_off(g_controller_fd);
+        return 1;
+    }
+    
+    /* Fallback: keep it on, dim amber so it's obviously idle */
+    pthread_mutex_lock(&g_controller_output_mutex);
+    g_controller_output.rumble_left = 0;
+    g_controller_output.rumble_right = 0;
+    g_controller_output.led_r = 30;
+    g_controller_output.led_g = 15;
+    g_controller_output.led_b = 0;
+    g_controller_output.player_leds = 0;
+    pthread_mutex_unlock(&g_controller_output_mutex);
+    return 0;
+}
+
 void system_enter_standby(void) {
     /* Debounce - don't enter standby if we just changed state */
     if (!can_change_state()) {
@@ -88,20 +115,14 @@ void system_enter_standby(void) {
     
     system_set_state(SYSTEM_STATE_STANDBY);
     
-    /* Disconnect Bluetooth to PS3 */
+    /* Disconnect Bluetooth to PS3 - and don't page it again until asked */
     ps3_bt_disconnect();
     
-    /* Set dim amber lightbar to indicate standby */
-    pthread_mutex_lock(&g_controller_output_mutex);
-    g_controller_output.rumble_left = 0;
-    g_controller_output.rumble_right = 0;
-    g_controller_output.led_r = 30;
-    g_controller_output.led_g = 15;
-    g_controller_output.led_b = 0;
-    g_controller_output.player_leds = 0;
-    pthread_mutex_unlock(&g_controller_output_mutex);
-    
-    printf("[System] Standby active - press PS button to wake\n");
+    if (controller_power_off()) {
+        printf("[System] Standby active - controller off, press PS button to wake\n");
+    } else {
+        printf("[System] Standby active - press PS button to wake\n");
+    }
 }
 
 void system_exit_standby(void) {
@@ -128,10 +149,16 @@ void system_exit_standby(void) {
     g_controller_output.led_b = 0;
     pthread_mutex_unlock(&g_controller_output_mutex);
     
-    /* Try to wake PS3 via Bluetooth */
+    /* Wake the PS3: connecting over BT is the wake - a paired controller
+     * paging a standby PS3 powers it on. The PS button report is a bonus. */
     printf("[System] Sending wake signal to PS3...\n");
     if (ps3_bt_wake() < 0) {
-        printf("[System] Warning: Wake signal failed\n");
+        /* Nothing answered. Go back to standby so the next PS press tries
+         * again, instead of sitting ACTIVE with no console. Controller stays
+         * on this time - no point turning it off in the user's hands. */
+        printf("[System] Warning: Wake failed - back to standby\n");
+        system_set_state(SYSTEM_STATE_STANDBY);
+        return;
     }
     
     system_set_state(SYSTEM_STATE_ACTIVE);
@@ -259,10 +286,6 @@ void lightbar_read_ipc(controller_output_t* output) {
 /* ============================================================================
  * CONTROLLER OUTPUT THREAD
  * ============================================================================ */
-
-/* Forward declaration - set by controller driver when connected */
-static int g_controller_fd = -1;
-static const controller_driver_t* g_active_driver = NULL;
 
 void controller_set_active(int fd, const controller_driver_t* driver) {
     g_controller_fd = fd;

@@ -18,6 +18,7 @@
 #include "core/common.h"
 #include "console/ps3/ds3_emulation.h"
 #include "console/ps3/usb_gadget.h"
+#include "console/ps3/bt_hid.h"
 
 /* ============================================================================
  * GLOBAL STATE
@@ -28,21 +29,26 @@ int g_ep0_fd = -1;
 int g_ep1_fd = -1;
 int g_ep2_fd = -1;
 
-/* Track consecutive suspend events to distinguish real power loss from glitches */
-static int g_suspend_count = 0;
+/* Suspend bookkeeping. The PS3 side of the liveness decision lives here;
+ * the decision itself (reconnect BT? enter standby?) is made in the BT
+ * thread, which has both reference points. */
+static int g_suspend_count = 0;              /* log only */
 static uint64_t g_last_enable_time = 0;
-
-/* Minimum time USB must be enabled before we trust SUSPEND as real standby (ms) */
-#define USB_STABLE_TIME_MS 5000
-
-/* Number of consecutive suspends needed before entering standby */
-#define SUSPEND_THRESHOLD 3
 
 /* On an externally powered Pi Zero, VBUS never drops on unplug (it's tied to
  * the 5V rail), so dwc2 never sends DISABLE - only a SUSPEND with no RESUME.
- * Treat that as a disconnect after this long (ms). */
+ * The PS3 turning off looks exactly the same from here. Either way, USB is
+ * "dead" after this long (ms) with no RESUME. */
 #define SUSPEND_DISCONNECT_MS 1000
 static volatile uint64_t g_suspend_since = 0;
+
+/* Ignore SUSPENDs in the first moments after ENABLE - the PS3 glitches a
+ * couple during enumeration and we don't want those to read as "dead". */
+#define USB_SUSPEND_ARM_MS 2000
+
+static volatile int g_usb_bound = 0;
+static volatile uint64_t g_usb_f4_time = 0;
+static volatile uint32_t g_usb_session = 0;
 
 /* ============================================================================
  * USB DESCRIPTORS
@@ -263,17 +269,44 @@ int ps3_usb_bind(void) {
     snprintf(cmd, sizeof(cmd), "echo '%s' > %s/UDC", g_udc_name, USB_GADGET_PATH);
     int ret = system(cmd);
     if (ret == 0) {
+        g_usb_bound = 1;
         printf("[USB] Bound to UDC %s\n", g_udc_name);
     }
     return ret == 0 ? 0 : -1;
 }
 
 int ps3_usb_unbind(void) {
+    if (!g_usb_bound) return 0;   /* already unbound (e.g. soft-unplugged) */
+    
+    /* Clear bound BEFORE writing the UDC file: the kernel delivers
+     * FUNCTIONFS_UNBIND to ep0 during the write, and the control thread
+     * uses g_usb_bound to tell our own unbind from the UDC disappearing. */
+    g_usb_bound = 0;
+    g_usb_enabled = 0;
+    g_suspend_since = 0;
+    g_usb_f4_time = 0;
+    
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "echo '' > %s/UDC", USB_GADGET_PATH);
-    system(cmd);
+    if (system(cmd) != 0) {
+        printf("[USB] Unbind failed\n");
+        g_usb_bound = 1;
+        return -1;
+    }
     printf("[USB] Unbound from UDC\n");
     return 0;
+}
+
+int ps3_usb_soft_unplug(void) {
+    printf("[USB] Soft unplug - handing off to Bluetooth\n");
+    
+    controller_output_t output;
+    controller_output_copy(&output);
+    output.rumble_left = 0;
+    output.rumble_right = 0;
+    controller_output_update(&output);
+    
+    return ps3_usb_unbind();
 }
 
 int ps3_usb_open_endpoint(int endpoint_num) {
@@ -292,7 +325,7 @@ int ps3_usb_check_suspend_timeout(void) {
     if (!g_usb_enabled || g_suspend_since == 0) return 0;
     if (time_get_ms() - g_suspend_since < SUSPEND_DISCONNECT_MS) return 0;
     
-    printf("[USB] SUSPEND with no RESUME for %d ms - treating as disconnect\n",
+    printf("[USB] SUSPEND with no RESUME for %d ms - USB dead\n",
            SUSPEND_DISCONNECT_MS);
     g_usb_enabled = 0;
     g_suspend_since = 0;
@@ -303,6 +336,36 @@ int ps3_usb_check_suspend_timeout(void) {
     output.rumble_right = 0;
     controller_output_update(&output);
     return 1;
+}
+
+int ps3_usb_is_bound(void) {
+    return g_usb_bound;
+}
+
+int ps3_usb_is_alive(void) {
+    return g_usb_bound && g_usb_enabled && g_suspend_since == 0;
+}
+
+uint64_t ps3_usb_handshake_done_ms(void) {
+    return g_usb_f4_time;
+}
+
+uint32_t ps3_usb_session_id(void) {
+    return g_usb_session;
+}
+
+int ps3_usb_is_dead(void) {
+    /* Not enabled at all, or suspended past the timeout (the timeout poll
+     * clears g_usb_enabled, but answer correctly even between polls). */
+    if (!g_usb_bound) return 0;   /* unbound on purpose isn't "dead" */
+    if (!g_usb_enabled) return 1;
+    if (g_suspend_since && time_get_ms() - g_suspend_since >= SUSPEND_DISCONNECT_MS) return 1;
+    return 0;
+}
+
+uint64_t ps3_usb_enabled_for_ms(void) {
+    if (!g_usb_enabled) return 0;
+    return time_get_ms() - g_last_enable_time;
 }
 
 void ps3_usb_cleanup(void) {
@@ -360,6 +423,11 @@ void* ps3_usb_control_thread(void* arg) {
                         r = read(g_ep0_fd, buf, wLength < 64 ? wLength : 64);
                         if (r > 0) {
                             ds3_handle_set_report(report_id, buf, r);
+                            /* F4 = PS3 has registered us and our MAC; USB has
+                             * done its job. BT thread takes it from here. */
+                            if (report_id == 0xF4 && g_usb_f4_time == 0) {
+                                g_usb_f4_time = time_get_ms();
+                            }
                         }
                     }
                     write(g_ep0_fd, NULL, 0);  /* ACK */
@@ -373,9 +441,11 @@ void* ps3_usb_control_thread(void* arg) {
             case FUNCTIONFS_ENABLE:
                 printf("[USB] *** ENABLED - PS3 connected ***\n");
                 g_usb_enabled = 1;
-                g_suspend_count = 0;  /* Reset suspend counter */
+                g_suspend_count = 0;
                 g_last_enable_time = time_get_ms();
                 g_suspend_since = 0;
+                g_usb_f4_time = 0;
+                g_usb_session++;
                 
                 if (system_get_state() == SYSTEM_STATE_WAKING) {
                     printf("[USB] PS3 responded to wake\n");
@@ -403,33 +473,34 @@ void* ps3_usb_control_thread(void* arg) {
             case FUNCTIONFS_SUSPEND: {
                 g_suspend_count++;
                 uint64_t now = time_get_ms();
-                if (g_suspend_since == 0) g_suspend_since = now;
                 uint64_t time_since_enable = now - g_last_enable_time;
                 
-                printf("[USB] SUSPEND event #%d (USB stable for %llu ms)\n", 
-                       g_suspend_count, (unsigned long long)time_since_enable);
-                
-                /* 
-                 * Only enter standby if:
-                 * 1. USB has been stable for a while (not just during initial connection)
-                 * 2. We've seen multiple suspend events (not just a glitch)
-                 * 3. We're currently in ACTIVE state
-                 */
-                if (time_since_enable >= USB_STABLE_TIME_MS && 
-                    g_suspend_count >= SUSPEND_THRESHOLD &&
-                    system_get_state() == SYSTEM_STATE_ACTIVE) {
-                    
-                    printf("[USB] *** SUSPEND confirmed - entering standby ***\n");
-                    g_usb_enabled = 0;
-                    system_enter_standby();
-                } else {
-                    printf("[USB] SUSPEND ignored (not stable or threshold not met)\n");
+                /* Early suspends during enumeration are noise */
+                if (time_since_enable < USB_SUSPEND_ARM_MS) {
+                    printf("[USB] SUSPEND #%d ignored (%llu ms after enable)\n",
+                           g_suspend_count, (unsigned long long)time_since_enable);
+                    break;
                 }
+                
+                if (g_suspend_since == 0) g_suspend_since = now;
+                printf("[USB] SUSPEND #%d (USB up %llu ms) - waiting %d ms for RESUME\n",
+                       g_suspend_count, (unsigned long long)time_since_enable,
+                       SUSPEND_DISCONNECT_MS);
+                /* Whether this is an unplug or the PS3 turning off is decided
+                 * in the BT thread once the timeout expires - it knows whether
+                 * the BT link is still alive. */
                 break;
             }
                 
             case FUNCTIONFS_UNBIND:
-                printf("[USB] UNBIND\n");
+                if (!g_usb_bound) {
+                    /* Our own soft-unplug / shutdown unbind - expected.
+                     * ep0 stays open; a later ps3_usb_bind() rebinds the
+                     * same function and these ep files keep working. */
+                    printf("[USB] UNBIND (soft unplug)\n");
+                    break;
+                }
+                printf("[USB] UNBIND - UDC went away, shutting down\n");
                 g_running = 0;
                 break;
                 
@@ -452,8 +523,6 @@ void* ps3_usb_input_thread(void* arg) {
     
     printf("[USB] Input thread started\n");
     
-    uint8_t report[DS3_INPUT_REPORT_SIZE];
-    
     while (g_running) {
         if (system_is_standby()) {
             usleep(100000);
@@ -461,14 +530,12 @@ void* ps3_usb_input_thread(void* arg) {
         }
         
         if (g_usb_enabled) {
-            /* Get current controller state */
             controller_state_t state;
             controller_state_copy(&state);
             
-            /* Build DS3 report from generic state */
+            uint8_t report[DS3_INPUT_REPORT_SIZE];
             ds3_build_input_report(&state, report);
             
-            /* Send to PS3 */
             write(g_ep1_fd, report, DS3_INPUT_REPORT_SIZE);
         }
         
@@ -496,10 +563,9 @@ void* ps3_usb_output_thread(void* arg) {
         ssize_t n = read(g_ep2_fd, buf, sizeof(buf));
         
         if (n <= 0) {
-            if (errno == EAGAIN) {
-                usleep(1000);
-                continue;
-            }
+            /* EAGAIN while idle; ESHUTDOWN etc. while unbound - either way
+             * don't spin */
+            usleep(errno == EAGAIN ? 1000 : 50000);
             continue;
         }
         
