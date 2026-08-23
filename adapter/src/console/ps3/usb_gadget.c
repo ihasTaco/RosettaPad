@@ -29,21 +29,20 @@ int g_ep0_fd = -1;
 int g_ep1_fd = -1;
 int g_ep2_fd = -1;
 
-/* Suspend bookkeeping. The PS3 side of the liveness decision lives here;
- * the decision itself (reconnect BT? enter standby?) is made in the BT
- * thread, which has both reference points. */
+/* Suspend bookkeeping. USB liveness is tracked here; what to do about it
+ * (reconnect, standby) is decided in the Bluetooth thread. */
 static int g_suspend_count = 0;              /* log only */
 static uint64_t g_last_enable_time = 0;
 
-/* On an externally powered Pi Zero, VBUS never drops on unplug (it's tied to
- * the 5V rail), so dwc2 never sends DISABLE - only a SUSPEND with no RESUME.
- * The PS3 turning off looks exactly the same from here. Either way, USB is
- * "dead" after this long (ms) with no RESUME. */
+/* On an externally powered Pi Zero, VBUS is tied to the 5V rail and never
+ * drops on unplug, so dwc2 never delivers DISABLE - only a SUSPEND with no
+ * RESUME. The PS3 powering off looks identical. USB is considered dead after
+ * this many ms suspended with no RESUME. */
 #define SUSPEND_DISCONNECT_MS 1000
 static volatile uint64_t g_suspend_since = 0;
 
-/* Ignore SUSPENDs in the first moments after ENABLE - the PS3 glitches a
- * couple during enumeration and we don't want those to read as "dead". */
+/* The PS3 issues a few spurious SUSPENDs during enumeration. Ignore any
+ * that arrive within this many ms of ENABLE. */
 #define USB_SUSPEND_ARM_MS 2000
 
 static volatile int g_usb_bound = 0;
@@ -278,9 +277,9 @@ int ps3_usb_bind(void) {
 int ps3_usb_unbind(void) {
     if (!g_usb_bound) return 0;   /* already unbound (e.g. soft-unplugged) */
     
-    /* Clear bound BEFORE writing the UDC file: the kernel delivers
-     * FUNCTIONFS_UNBIND to ep0 during the write, and the control thread
-     * uses g_usb_bound to tell our own unbind from the UDC disappearing. */
+    /* Clear g_usb_bound before writing the UDC file. The kernel delivers
+     * FUNCTIONFS_UNBIND to ep0 during the write, and the control thread uses
+     * this flag to distinguish a requested unbind from the UDC going away. */
     g_usb_bound = 0;
     g_usb_enabled = 0;
     g_suspend_since = 0;
@@ -423,8 +422,8 @@ void* ps3_usb_control_thread(void* arg) {
                         r = read(g_ep0_fd, buf, wLength < 64 ? wLength : 64);
                         if (r > 0) {
                             ds3_handle_set_report(report_id, buf, r);
-                            /* F4 = PS3 has registered us and our MAC; USB has
-                             * done its job. BT thread takes it from here. */
+                            /* F4 marks the end of the USB handshake; the
+                             * Bluetooth thread handles the handoff. */
                             if (report_id == 0xF4 && g_usb_f4_time == 0) {
                                 g_usb_f4_time = time_get_ms();
                             }
@@ -494,9 +493,9 @@ void* ps3_usb_control_thread(void* arg) {
                 
             case FUNCTIONFS_UNBIND:
                 if (!g_usb_bound) {
-                    /* Our own soft-unplug / shutdown unbind - expected.
-                     * ep0 stays open; a later ps3_usb_bind() rebinds the
-                     * same function and these ep files keep working. */
+                    /* Requested unbind (soft unplug or shutdown). ep0 stays
+                     * open so a later ps3_usb_bind() reuses the same
+                     * function and endpoint files. */
                     printf("[USB] UNBIND (soft unplug)\n");
                     break;
                 }
@@ -563,8 +562,7 @@ void* ps3_usb_output_thread(void* arg) {
         ssize_t n = read(g_ep2_fd, buf, sizeof(buf));
         
         if (n <= 0) {
-            /* EAGAIN while idle; ESHUTDOWN etc. while unbound - either way
-             * don't spin */
+            /* EAGAIN while idle, ESHUTDOWN while unbound; don't spin. */
             usleep(errno == EAGAIN ? 1000 : 50000);
             continue;
         }

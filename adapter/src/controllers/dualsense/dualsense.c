@@ -704,16 +704,15 @@ static void dualsense_enter_low_power(int fd) {
 }
 
 /*
- * Power the DualSense off by dropping its BT link from the host side - the
- * same thing the PS5 does at shutdown. The controller shuts itself down
- * when the host disconnects, and pressing PS later reconnects it to the Pi,
- * which is what kicks off the PS3 wake.
+ * Power the DualSense off by disconnecting its Bluetooth link from the host
+ * side, as the PS5 does at shutdown. The controller powers itself down when
+ * the host disconnects; pressing PS later reconnects it to the Pi.
  *
- * Done with a raw HCI disconnect rather than bluetoothctl/D-Bus: no
- * dependency, no fork, and bluetoothd sees the disconnect like any other.
+ * Uses a raw HCI disconnect rather than bluetoothctl/D-Bus: no dependency,
+ * no fork, and bluetoothd observes the disconnect normally.
  */
 static void dualsense_power_off(int fd) {
-    /* The hidraw "uniq" string is the controller's BT address */
+    /* The hidraw uniq string is the controller's Bluetooth address */
     char uniq[64] = "";
     if (fd < 0 || ioctl(fd, HIDIOCGRAWUNIQ(sizeof(uniq)), uniq) < 0 || uniq[0] == '\0') {
         printf("[DualSense] power_off: no BT address for device (USB?) - dimming instead\n");
@@ -728,7 +727,7 @@ static void dualsense_power_off(int fd) {
         return;
     }
     
-    /* Lights out first so the controller doesn't flash red as it dies */
+    /* Clear LEDs first so the controller goes dark rather than flashing */
     controller_output_t off = {0};
     dualsense_write_report(fd, &off, 1, 1);
     

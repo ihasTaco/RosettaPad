@@ -74,9 +74,9 @@ static int g_controller_fd = -1;
 static const controller_driver_t* g_active_driver = NULL;
 
 /*
- * Turn the controller off, the way a DS3 turns off when the PS3 does.
- * Returns 1 if the driver powered it off, 0 if it only dimmed (no power_off
- * hook) - caller uses that to pick the right log line.
+ * Power the controller off, as a DS3 does when the PS3 turns off.
+ * Returns 1 if the driver powered it off, 0 if it was only dimmed because
+ * the driver has no power_off hook.
  */
 static int controller_power_off(void) {
     if (g_active_driver && g_active_driver->power_off && g_controller_fd >= 0) {
@@ -84,7 +84,7 @@ static int controller_power_off(void) {
         return 1;
     }
     
-    /* Fallback: keep it on, dim amber so it's obviously idle */
+    /* Fallback: leave it on with a dim amber lightbar */
     pthread_mutex_lock(&g_controller_output_mutex);
     g_controller_output.rumble_left = 0;
     g_controller_output.rumble_right = 0;
@@ -115,7 +115,7 @@ void system_enter_standby(void) {
     
     system_set_state(SYSTEM_STATE_STANDBY);
     
-    /* Disconnect Bluetooth to PS3 - and don't page it again until asked */
+    /* Disconnect Bluetooth; the PS3 is not paged again until a wake request */
     ps3_bt_disconnect();
     
     if (controller_power_off()) {
@@ -149,13 +149,12 @@ void system_exit_standby(void) {
     g_controller_output.led_b = 0;
     pthread_mutex_unlock(&g_controller_output_mutex);
     
-    /* Wake the PS3: connecting over BT is the wake - a paired controller
-     * paging a standby PS3 powers it on. The PS button report is a bonus. */
+    /* Connecting over Bluetooth is the wake: a paired controller paging a
+     * standby PS3 powers it on. */
     printf("[System] Sending wake signal to PS3...\n");
     if (ps3_bt_wake() < 0) {
-        /* Nothing answered. Go back to standby so the next PS press tries
-         * again, instead of sitting ACTIVE with no console. Controller stays
-         * on this time - no point turning it off in the user's hands. */
+        /* Return to standby so the next PS press retries, rather than
+         * sitting ACTIVE with no console. The controller is left on. */
         printf("[System] Warning: Wake failed - back to standby\n");
         system_set_state(SYSTEM_STATE_STANDBY);
         return;

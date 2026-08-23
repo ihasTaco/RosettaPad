@@ -273,12 +273,12 @@ typedef struct controller_driver {
     void (*enter_low_power)(int fd);
     
     /**
-     * Optional: Power the controller off entirely.
-     * Called when the PS3 turns off (both USB and BT to the PS3 are dead).
-     * Mirrors a real DS3, which shuts down when its host disconnects. The
-     * controller must be able to reconnect to the Pi on its own afterwards
-     * (PS button) - that's what wakes the PS3 back up.
-     * If NULL, the framework falls back to enter_low_power / dim lightbar.
+     * Optional: Power the controller off.
+     * Called when the console turns off. Mirrors a DS3, which shuts down
+     * when its host disconnects. The controller must be able to reconnect
+     * to the adapter on its own afterwards (e.g. PS button), since that is
+     * what wakes the console. If NULL, the framework dims the lightbar
+     * instead.
      * 
      * @param fd Device file descriptor (still open at call time)
      */
