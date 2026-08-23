@@ -1,6 +1,6 @@
 # RosettaPad
 
-**Use a DualSense controller on your PS3 to get working PS (Home) button and rumble!**
+**Use a DualSense controller on your PS3 to get working PS (Home) button, motion controls and rumble!**
 
 RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, motion controls, rumble, battery status) work as expected. Setup takes about 15 minutes.
 
@@ -60,13 +60,13 @@ So, can you use a DualSense on a PS3? Yes! It works great with RosettaPad.
 | Rumble | ✅ | Both motors work without issues |
 | PS3 Wake from Standby | ✅ | Works without issues. |
 | Battery display on PS3 | ✅ | I know this is a small feature, but im proud of this one lol. The DualSense sends current battery status (Whether it is plugged in and charging, charged, or discharging) and it gets displayed in the PS3 UI. |
+| Safe Mode | ✅ | Works without issues. |
 
 
 ### What's In Progress?
 
 | Feature | Status | Notes |
 |---------|:------:|-------|
-| Safe Mode | 🚧 | Works but needs a service restart in order to be detected, want to make this automatic |
 | Touchpad as precision right stick | 🚧 | It works, just not as well as I hoped | 
 
 ### What's Planned?
