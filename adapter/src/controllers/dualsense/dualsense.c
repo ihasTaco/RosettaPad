@@ -473,12 +473,12 @@ static int dualsense_process_input(const uint8_t* buf, size_t len,
         if (g_ds_calibration.valid) {
             /* Apply calibration: output is in DS_GYRO_RES_PER_DEG_S (1024) units per deg/s
              * and DS_ACC_RES_PER_G (8192) units per g */
-            out_state->gyro_x  = (int16_t)apply_calibration(raw_gyro_x, &g_ds_calibration.gyro[0]);
-            out_state->gyro_y  = (int16_t)apply_calibration(raw_gyro_y, &g_ds_calibration.gyro[1]);
-            out_state->gyro_z  = (int16_t)apply_calibration(raw_gyro_z, &g_ds_calibration.gyro[2]);
-            out_state->accel_x = (int16_t)apply_calibration(raw_accel_x, &g_ds_calibration.accel[0]);
-            out_state->accel_y = (int16_t)apply_calibration(raw_accel_y, &g_ds_calibration.accel[1]);
-            out_state->accel_z = (int16_t)apply_calibration(raw_accel_z, &g_ds_calibration.accel[2]);
+            out_state->gyro_x  = apply_calibration(raw_gyro_x, &g_ds_calibration.gyro[0]);
+            out_state->gyro_y  = apply_calibration(raw_gyro_y, &g_ds_calibration.gyro[1]);
+            out_state->gyro_z  = apply_calibration(raw_gyro_z, &g_ds_calibration.gyro[2]);
+            out_state->accel_x = apply_calibration(raw_accel_x, &g_ds_calibration.accel[0]);
+            out_state->accel_y = apply_calibration(raw_accel_y, &g_ds_calibration.accel[1]);
+            out_state->accel_z = apply_calibration(raw_accel_z, &g_ds_calibration.accel[2]);
         } else {
             /* No calibration - use raw values */
             out_state->gyro_x  = raw_gyro_x;
@@ -579,9 +579,9 @@ static controller_output_t last_sent = {
 };
 static int have_last_sent = 0;
 
-/* Time-based periodic refresh (NOT call-count based). The kernel driver only
- * reasserts its blue/P1 defaults on connect, so this is a safety net, not a
- * fight. 0 disables. */
+/* Periodic LED re-send while idle. The kernel driver only reasserts its
+ * blue/P1 defaults on connect, so this is a safety net rather than a
+ * requirement. 0 disables. */
 #define DS_LED_REFRESH_MS  2000
 static uint64_t last_send_ms = 0;
 
@@ -652,8 +652,7 @@ static int dualsense_send_output(int fd, const controller_output_t* output) {
         output->led_b != last_sent.led_b ||
         output->player_leds != last_sent.player_leds;
 
-    /* Periodic LED refresh only if we've been idle - never during a rumble
-     * burst, which is exactly when the old call-counted refresh fired. */
+    /* Periodic LED refresh only while idle, never during a rumble burst. */
     int refresh = DS_LED_REFRESH_MS > 0 && have_last_sent &&
                   (now - last_send_ms) >= DS_LED_REFRESH_MS;
 

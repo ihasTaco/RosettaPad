@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 
 #include "core/common.h"
 #include "console/ps3/ds3_emulation.h"
@@ -45,11 +46,11 @@ static uint8_t g_ds3_report[DS3_INPUT_REPORT_SIZE] = {
     0x00, 0x00, 0x00, 0x00,  /* [32-35] Reserved */
     0x33, 0x04, /* [36-37] Unknown */
     0x77, 0x01, /* [38-39] Unknown */
-    0xDE, 0x02, /* [40-41] Accel X */
-    0x35, 0x02, /* [42-43] Accel Y */
-    0x08, 0x01, /* [44-45] Accel Z */
-    0x94, 0x00, /* [46-47] Gyro Z */
-    0x02        /* [48] Final byte */
+    0xDE,       /* [40]    Unknown */
+    0x02, 0x35, /* [41-42] Accel X = 565 (big-endian) */
+    0x02, 0x08, /* [43-44] Accel Y = 520 */
+    0x01, 0x94, /* [45-46] Accel Z = 404 (~512 - 1g) */
+    0x00, 0x02  /* [47-48] Gyro Z  = 2   */
 };
 static pthread_mutex_t g_ds3_report_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -340,56 +341,71 @@ void ds3_build_input_report(const controller_state_t* state, uint8_t* out_report
     out_report[38] = 0x77;
     out_report[39] = 0x01;
     
-    /* --- Motion Data (bytes 40-47) --- */
+    /* --- Motion Data (bytes 41-48) --- */
     /*
-     * After calibration, DualSense values are normalized:
-     *   Accel: DS_ACC_RES_PER_G (8192) units per g
-     *   Gyro:  DS_GYRO_RES_PER_DEG_S (1024) units per deg/s
-     * 
-     * DS3 motion data: 10-bit unsigned (0-1023), centered at rest
-     *   Accel at rest: X=512, Y=512, Z=~400 (gravity pulls Z down)
-     *   Gyro at rest: Z=~498
+     * Input is calibrated in hid-playstation units (accel 8192/g, gyro 1024/deg/s).
+     * DS3 motion is 10-bit unsigned, offset around a rest value, stored BIG-endian.
      *
-     * DS3 accel sensitivity is roughly 113 counts per g (from captures)
-     * So: DS3 = 512 + (DualSense / 8192) * 113 = 512 + DualSense / 72
+     * Mapping (DualSense -> DS3):
+     *   DS3 accel X (left/right tilt) <- DS5 accel_x / 72
+     *   DS3 accel Y (fwd/back tilt)   <- DS5 accel_y / 72
+     *   DS3 accel Z (vertical)        <- DS5 accel_z / 72
+     *   DS3 gyro  Z (yaw)             <- DS5 gyro_y  / 128
      *
-     * DS3 gyro sensitivity is roughly 8.5 counts per deg/s
-     * So: DS3 = 498 + (DualSense / 1024) * 8.5 = 498 + DualSense / 120
-     *
-     * Note: Axis orientations may differ - test and adjust signs if needed
+     * Rest offsets and signs below were matched against a real DS3 measured
+     * in the same orientations. Reference captures (X, Y, Z, G):
+     *   flat on table            509, 400, 489, 512
+     *   45 deg triggers up       510, 430, 588, 512
+     *   45 deg triggers down     510, 454, 412, 512
+     *   45 deg tilt right        580, 433, 471, 512
+     *   45 deg tilt left         450, 423, 471, 512
+     *   45 deg yaw right (wheel) 590, 455, 566, 700+
+     *   45 deg yaw left  (wheel) 436, 465, 580, 200
      */
-    
-    /* Convert calibrated accel (8192 per g) to DS3 (113 per g, centered at 512) */
-    int16_t ds3_accel_x = 512 + (state->accel_x / 72);
-    int16_t ds3_accel_y = 512 + (state->accel_y / 72);
-    int16_t ds3_accel_z = 512 + (state->accel_z / 72);
-    
-    /* Convert calibrated gyro (1024 per deg/s) to DS3 (centered at 498) */  
-    int16_t ds3_gyro_z  = 498 + (state->gyro_z / 120);
-    
-    /* Clamp to 10-bit range */
-    if (ds3_accel_x < 0) ds3_accel_x = 0;
-    if (ds3_accel_x > 1023) ds3_accel_x = 1023;
-    if (ds3_accel_y < 0) ds3_accel_y = 0;
-    if (ds3_accel_y > 1023) ds3_accel_y = 1023;
-    if (ds3_accel_z < 0) ds3_accel_z = 0;
-    if (ds3_accel_z > 1023) ds3_accel_z = 1023;
-    if (ds3_gyro_z < 0) ds3_gyro_z = 0;
-    if (ds3_gyro_z > 1023) ds3_gyro_z = 1023;
-    
-    /* Little-endian 16-bit values */
-    out_report[DS3_OFF_ACCEL_X]     = ds3_accel_x & 0xFF;
-    out_report[DS3_OFF_ACCEL_X + 1] = (ds3_accel_x >> 8) & 0xFF;
-    out_report[DS3_OFF_ACCEL_Y]     = ds3_accel_y & 0xFF;
-    out_report[DS3_OFF_ACCEL_Y + 1] = (ds3_accel_y >> 8) & 0xFF;
-    out_report[DS3_OFF_ACCEL_Z]     = ds3_accel_z & 0xFF;
-    out_report[DS3_OFF_ACCEL_Z + 1] = (ds3_accel_z >> 8) & 0xFF;
-    out_report[DS3_OFF_GYRO_Z]      = ds3_gyro_z & 0xFF;
-    out_report[DS3_OFF_GYRO_Z + 1]  = (ds3_gyro_z >> 8) & 0xFF;
-    
-    /* --- Final byte --- */
-    out_report[48] = 0x02;
-    
+    #define DS3_MOTION_SIGN_X   (+1)
+    #define DS3_MOTION_SIGN_Y   (-1)   /* DS5 Y points the opposite way to DS3 Y */
+    #define DS3_MOTION_SIGN_Z   (-1)   /* DS5 reads -1g on Z when flat; DS3 Z sits above rest */
+    #define DS3_MOTION_SIGN_YAW (+1)   /* clockwise yaw raises the DS3 gyro value */
+
+    int32_t ds3_accel_x = 509 + DS3_MOTION_SIGN_X   * (state->accel_x / 72);
+    int32_t ds3_accel_y = 512 + DS3_MOTION_SIGN_Y   * (state->accel_y / 72);
+    int32_t ds3_accel_z = 489 + DS3_MOTION_SIGN_Z   * (state->accel_z / 72);
+    int32_t ds3_gyro_z  = 512 + DS3_MOTION_SIGN_YAW * (state->gyro_y  / 128);
+
+    /* Clamp to 10-bit range (int32 math above, so no wrap before this point) */
+    #define CLAMP10(v) ((v) < 0 ? 0 : ((v) > 1023 ? 1023 : (v)))
+    ds3_accel_x = CLAMP10(ds3_accel_x);
+    ds3_accel_y = CLAMP10(ds3_accel_y);
+    ds3_accel_z = CLAMP10(ds3_accel_z);
+    ds3_gyro_z  = CLAMP10(ds3_gyro_z);
+
+    /* Big-endian 16-bit, as a real sixaxis sends them */
+    out_report[DS3_OFF_ACCEL_X]     = (ds3_accel_x >> 8) & 0x03;
+    out_report[DS3_OFF_ACCEL_X + 1] = ds3_accel_x & 0xFF;
+    out_report[DS3_OFF_ACCEL_Y]     = (ds3_accel_y >> 8) & 0x03;
+    out_report[DS3_OFF_ACCEL_Y + 1] = ds3_accel_y & 0xFF;
+    out_report[DS3_OFF_ACCEL_Z]     = (ds3_accel_z >> 8) & 0x03;
+    out_report[DS3_OFF_ACCEL_Z + 1] = ds3_accel_z & 0xFF;
+    out_report[DS3_OFF_GYRO_Z]      = (ds3_gyro_z >> 8) & 0x03;
+    out_report[DS3_OFF_GYRO_Z + 1]  = ds3_gyro_z & 0xFF;
+
+    /* Once-a-second motion dump under -v so axis/sign tuning can be done
+     * from the log: flat on a table should read roughly 509 / 400 / 489 / 512. */
+    if (g_verbose) {
+        static time_t last_motion_log = 0;
+        time_t now = time(NULL);
+        if (now != last_motion_log) {
+            last_motion_log = now;
+            printf("[MOTION] ds3 ax=%d ay=%d az=%d gz=%d | ds5 a=(%d,%d,%d) g=(%d,%d,%d)\n",
+                   (int)ds3_accel_x, (int)ds3_accel_y, (int)ds3_accel_z, (int)ds3_gyro_z,
+                   (int)state->accel_x, (int)state->accel_y, (int)state->accel_z,
+                   (int)state->gyro_x, (int)state->gyro_y, (int)state->gyro_z);
+        }
+    }
+
+    /* Byte 40: unknown, constant in captures */
+    out_report[40] = 0xDE;
+
     /* Update cached report */
     pthread_mutex_lock(&g_ds3_report_mutex);
     memcpy(g_ds3_report, out_report, DS3_INPUT_REPORT_SIZE);

@@ -101,10 +101,12 @@
 #define DS3_OFF_BATTERY       29
 #define DS3_OFF_CHARGE        30
 #define DS3_OFF_CONNECTION    31
-#define DS3_OFF_ACCEL_X       40
-#define DS3_OFF_ACCEL_Y       42
-#define DS3_OFF_ACCEL_Z       44
-#define DS3_OFF_GYRO_Z        46
+/* Motion: 10-bit values stored BIG-endian at 41-48 (report ID at [0]).
+ * hid-sony.c byte-swaps rd[41..48] on receive, which confirms the layout. */
+#define DS3_OFF_ACCEL_X       41
+#define DS3_OFF_ACCEL_Z       43
+#define DS3_OFF_ACCEL_Y       45
+#define DS3_OFF_GYRO_Z        47
 
 /* ============================================================================
  * FUNCTIONS
