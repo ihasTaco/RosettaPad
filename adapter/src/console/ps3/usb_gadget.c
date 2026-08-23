@@ -45,9 +45,13 @@ static volatile uint64_t g_suspend_since = 0;
  * that arrive within this many ms of ENABLE. */
 #define USB_SUSPEND_ARM_MS 2000
 
+/* Enumeration grace after bind before bound-but-not-enabled counts as dead */
+#define USB_ENUM_GRACE_MS 3000
+
 static volatile int g_usb_bound = 0;
 static volatile uint64_t g_usb_f4_time = 0;
 static volatile uint32_t g_usb_session = 0;
+static volatile uint64_t g_bind_time = 0;
 
 /* ============================================================================
  * USB DESCRIPTORS
@@ -269,6 +273,7 @@ int ps3_usb_bind(void) {
     int ret = system(cmd);
     if (ret == 0) {
         g_usb_bound = 1;
+        g_bind_time = time_get_ms();
         printf("[USB] Bound to UDC %s\n", g_udc_name);
     }
     return ret == 0 ? 0 : -1;
@@ -357,7 +362,11 @@ int ps3_usb_is_dead(void) {
     /* Not enabled at all, or suspended past the timeout (the timeout poll
      * clears g_usb_enabled, but answer correctly even between polls). */
     if (!g_usb_bound) return 0;   /* unbound on purpose isn't "dead" */
-    if (!g_usb_enabled) return 1;
+    if (!g_usb_enabled) {
+        /* Fresh bind: not enabled until the host enumerates (~1s) */
+        if (g_bind_time && time_get_ms() - g_bind_time < USB_ENUM_GRACE_MS) return 0;
+        return 1;
+    }
     if (g_suspend_since && time_get_ms() - g_suspend_since >= SUSPEND_DISCONNECT_MS) return 1;
     return 0;
 }
@@ -448,6 +457,21 @@ void* ps3_usb_control_thread(void* arg) {
                 
                 if (system_get_state() == SYSTEM_STATE_WAKING) {
                     printf("[USB] PS3 responded to wake\n");
+                    system_set_state(SYSTEM_STATE_ACTIVE);
+                }
+                else if (system_get_state() == SYSTEM_STATE_STANDBY) {
+                    /* PS3 powered itself on (front button / safe mode). Go
+                     * ACTIVE directly; skip the BT wake page. */
+                    printf("[USB] PS3 powered on during standby - exiting standby\n");
+                    
+                    /* Restore normal (red) lightbar, as the BT wake path does */
+                    controller_output_t wake_output;
+                    controller_output_copy(&wake_output);
+                    wake_output.led_r = 255;
+                    wake_output.led_g = 0;
+                    wake_output.led_b = 0;
+                    controller_output_update(&wake_output);
+                    
                     system_set_state(SYSTEM_STATE_ACTIVE);
                 }
                 break;

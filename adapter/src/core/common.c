@@ -68,6 +68,8 @@ static int can_change_state(void) {
 /* Forward declarations for console-specific functions */
 extern void ps3_bt_disconnect(void);
 extern int ps3_bt_wake(void);
+extern int ps3_usb_bind(void);
+extern int ps3_usb_is_bound(void);
 
 /* Active controller handle - set by controller_set_active() below */
 static int g_controller_fd = -1;
@@ -117,6 +119,14 @@ void system_enter_standby(void) {
     
     /* Disconnect Bluetooth; the PS3 is not paged again until a wake request */
     ps3_bt_disconnect();
+    
+    /* Rebind USB for standby so a self-booting PS3 (power button, safe
+     * mode) can enumerate; its ENABLE is the wake signal. */
+    if (!ps3_usb_is_bound()) {
+        if (ps3_usb_bind() == 0) {
+            printf("[System] USB gadget rebound - PS3 can enumerate on self power-on\n");
+        }
+    }
     
     if (controller_power_off()) {
         printf("[System] Standby active - controller off, press PS button to wake\n");

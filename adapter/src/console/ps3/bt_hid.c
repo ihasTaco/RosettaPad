@@ -417,6 +417,9 @@ static void become_master(void) {
  * returned 0 with no error. */
 static int g_drop_errno = 0;
 
+/* errno from the last failed connect attempt (refused vs timeout) */
+static int g_connect_errno = 0;
+
 static int handle_get_report(int sock, uint8_t report_id) {
     uint8_t response[68];
     size_t resp_len = 0;
@@ -618,6 +621,7 @@ int ps3_bt_connect(void) {
     
     g_ps3_bt_ctx.ctrl_sock = create_l2cap_socket(L2CAP_PSM_HID_CONTROL, &g_ps3_bt_ctx.ps3_addr);
     if (g_ps3_bt_ctx.ctrl_sock < 0) {
+        g_connect_errno = errno;
         printf("[BT] Control channel connect failed: %s\n", strerror(errno));
         g_ps3_bt_ctx.state = BT_STATE_ERROR;
         return -1;
@@ -627,6 +631,7 @@ int ps3_bt_connect(void) {
     
     g_ps3_bt_ctx.intr_sock = create_l2cap_socket(L2CAP_PSM_HID_INTERRUPT, &g_ps3_bt_ctx.ps3_addr);
     if (g_ps3_bt_ctx.intr_sock < 0) {
+        g_connect_errno = errno;
         printf("[BT] Interrupt channel connect failed: %s\n", strerror(errno));
         close(g_ps3_bt_ctx.ctrl_sock);
         g_ps3_bt_ctx.ctrl_sock = -1;
@@ -634,6 +639,7 @@ int ps3_bt_connect(void) {
         return -1;
     }
     
+    g_connect_errno = 0;
     g_ps3_bt_ctx.state = BT_STATE_READY;
     g_ps3_bt_ctx.connect_time = time_get_ms();
     
@@ -767,7 +773,8 @@ int ps3_bt_wake(void) {
 #define BT_RETRY_FAST_COUNT     3
 #define BT_RETRY_SLOW_MS        1000
 #define BT_F4_TIMEOUT_MS        2000   /* reconnect if no F4 within this of connect */
-#define BT_FALLBACK_FAILS       10     /* consecutive no-F4 reconnects before USB fallback */
+#define BT_FALLBACK_FAILS       4      /* consecutive no-F4 reconnects before USB fallback */
+#define BT_REFUSED_FALLBACK_FAILS 2    /* consecutive ECONNREFUSED connects before USB fallback */
 #define BT_ADAPTER_RETRY_MS     2000   /* retry interval while hci0 is absent */
 
 void* ps3_bt_thread(void* arg) {
@@ -777,9 +784,11 @@ void* ps3_bt_thread(void* arg) {
     uint64_t next_attempt_ms = 0;
     int attempts = 0;              /* consecutive connect() failures */
     int f4_fails = 0;              /* consecutive no-F4 reconnects */
+    int refused_fails = 0;         /* consecutive ECONNREFUSED connects */
     uint64_t unplug_time = 0;      /* time of soft unplug, 0 = USB still bound */
     uint32_t handed_off_session = 0;  /* USB session already handed off or fallen back on */
     int fallback = 0;              /* input is on USB because BT never got F4 */
+    int await_fallback_session = 0; /* fallback rebind done, its ENABLE not yet seen */
     int had_ps3 = 0;               /* PS3 seen (USB alive or BT ready) since last standby */
     uint64_t next_adapter_try_ms = 0;
     
@@ -804,6 +813,11 @@ void* ps3_bt_thread(void* arg) {
         
         if (system_is_standby()) {
             had_ps3 = 0;
+            /* Console off - clear fallback state so the next boot retries BT */
+            fallback = 0;
+            await_fallback_session = 0;
+            f4_fails = 0;
+            refused_fails = 0;
             usleep(100000);
             continue;
         }
@@ -817,9 +831,17 @@ void* ps3_bt_thread(void* arg) {
          * rebind) resets the handoff bookkeeping. */
         uint32_t session = ps3_usb_session_id();
         if (ps3_usb_is_bound() && session != handed_off_session && fallback) {
-            printf("[BT] New USB session - fallback cleared, will try BT again\n");
-            fallback = 0;
-            f4_fails = 0;
+            if (await_fallback_session) {
+                /* Our own fallback rebind, not a power cycle - adopt it */
+                await_fallback_session = 0;
+                handed_off_session = session;
+                printf("[BT] Fallback session established - staying on USB\n");
+            } else {
+                printf("[BT] New USB session - fallback cleared, will try BT again\n");
+                fallback = 0;
+                f4_fails = 0;
+                refused_fails = 0;
+            }
         }
         
         /* Bound to USB (handshake pending, or fallback). The only event of
@@ -859,6 +881,7 @@ void* ps3_bt_thread(void* arg) {
                     next_attempt_ms = now + BT_CONNECT_DELAY_MS;
                     attempts = 0;
                     f4_fails = 0;
+                    refused_fails = 0;
                 }
             }
             usleep(50000);
@@ -902,6 +925,8 @@ void* ps3_bt_thread(void* arg) {
                             printf("[BT] USB rebind failed - will keep trying BT\n");
                             fallback = 0;
                             f4_fails = 0;
+                        } else {
+                            await_fallback_session = 1;
                         }
                         continue;
                     }
@@ -962,6 +987,28 @@ void* ps3_bt_thread(void* arg) {
                 
             case BT_STATE_ERROR:
                 ps3_bt_disconnect();
+                
+                /* Refused = BT stack not accepting (safe mode); won't fix
+                 * itself, fall back to USB. Other errnos keep retrying. */
+                if (g_connect_errno == ECONNREFUSED) {
+                    refused_fails++;
+                    if (refused_fails >= BT_REFUSED_FALLBACK_FAILS) {
+                        printf("[BT] PS3 refusing BT (%d/%d) - likely safe mode, rebinding USB\n",
+                               refused_fails, BT_REFUSED_FALLBACK_FAILS);
+                        fallback = 1;
+                        refused_fails = 0;
+                        if (ps3_usb_bind() < 0) {
+                            printf("[BT] USB rebind failed - will keep trying BT\n");
+                            fallback = 0;
+                        } else {
+                            await_fallback_session = 1;
+                        }
+                        break;
+                    }
+                } else {
+                    refused_fails = 0;
+                }
+                
                 next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
                                          ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
                 break;
