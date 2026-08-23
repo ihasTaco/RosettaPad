@@ -28,6 +28,9 @@
 #include <dirent.h>
 #include <linux/hidraw.h>
 #include <sys/ioctl.h>
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/hci_lib.h>
 
 #include "core/common.h"
 #include "controllers/dualsense/dualsense.h"
@@ -700,6 +703,61 @@ static void dualsense_enter_low_power(int fd) {
     }
 }
 
+/*
+ * Power the DualSense off by disconnecting its Bluetooth link from the host
+ * side, as the PS5 does at shutdown. The controller powers itself down when
+ * the host disconnects; pressing PS later reconnects it to the Pi.
+ *
+ * Uses a raw HCI disconnect rather than bluetoothctl/D-Bus: no dependency,
+ * no fork, and bluetoothd observes the disconnect normally.
+ */
+static void dualsense_power_off(int fd) {
+    /* The hidraw uniq string is the controller's Bluetooth address */
+    char uniq[64] = "";
+    if (fd < 0 || ioctl(fd, HIDIOCGRAWUNIQ(sizeof(uniq)), uniq) < 0 || uniq[0] == '\0') {
+        printf("[DualSense] power_off: no BT address for device (USB?) - dimming instead\n");
+        dualsense_enter_low_power(fd);
+        return;
+    }
+    
+    bdaddr_t addr;
+    if (str2ba(uniq, &addr) < 0) {
+        printf("[DualSense] power_off: bad address '%s'\n", uniq);
+        dualsense_enter_low_power(fd);
+        return;
+    }
+    
+    /* Clear LEDs first so the controller goes dark rather than flashing */
+    controller_output_t off = {0};
+    dualsense_write_report(fd, &off, 1, 1);
+    
+    int dev_id = hci_get_route(NULL);
+    int dd = hci_open_dev(dev_id);
+    if (dd < 0) {
+        perror("[DualSense] power_off: hci_open_dev");
+        return;
+    }
+    
+    struct hci_conn_info_req* cr = malloc(sizeof(*cr) + sizeof(struct hci_conn_info));
+    if (!cr) { hci_close_dev(dd); return; }
+    bacpy(&cr->bdaddr, &addr);
+    cr->type = ACL_LINK;
+    
+    if (ioctl(dd, HCIGETCONNINFO, (unsigned long)cr) < 0) {
+        perror("[DualSense] power_off: HCIGETCONNINFO (already disconnected?)");
+    } else if (hci_disconnect(dd, cr->conn_info->handle, HCI_OE_USER_ENDED_CONNECTION, 1000) < 0) {
+        perror("[DualSense] power_off: hci_disconnect");
+    } else {
+        printf("[DualSense] Powered off (%s)\n", uniq);
+    }
+    
+    free(cr);
+    hci_close_dev(dd);
+    
+    have_last_sent = 0;
+    output_seq = 0;
+}
+
 /* ============================================================================
  * DRIVER INSTANCE
  * ============================================================================ */
@@ -713,7 +771,8 @@ static const controller_driver_t dualsense_driver = {
     .process_input = dualsense_process_input,
     .send_output = dualsense_send_output,
     .on_disconnect = dualsense_on_disconnect,
-    .enter_low_power = dualsense_enter_low_power
+    .enter_low_power = dualsense_enter_low_power,
+    .power_off = dualsense_power_off
 };
 
 const controller_driver_t* dualsense_get_driver(void) {

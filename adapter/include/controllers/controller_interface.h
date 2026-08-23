@@ -272,6 +272,18 @@ typedef struct controller_driver {
      */
     void (*enter_low_power)(int fd);
     
+    /**
+     * Optional: Power the controller off.
+     * Called when the console turns off. Mirrors a DS3, which shuts down
+     * when its host disconnects. The controller must be able to reconnect
+     * to the adapter on its own afterwards (e.g. PS button), since that is
+     * what wakes the console. If NULL, the framework dims the lightbar
+     * instead.
+     * 
+     * @param fd Device file descriptor (still open at call time)
+     */
+    void (*power_off)(int fd);
+    
 } controller_driver_t;
 
 /* ============================================================================

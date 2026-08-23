@@ -70,6 +70,33 @@ int ps3_usb_bind(void);
 /* Poll from a non-blocking loop; clears g_usb_enabled on unplug, returns 1 if it did */
 int ps3_usb_check_suspend_timeout(void);
 
+/*
+ * USB liveness, as seen from the PS3 side. Only meaningful while bound.
+ *   alive - enabled and not suspended: the PS3 is definitely on
+ *   dead  - disabled, or suspended past SUSPEND_DISCONNECT_MS
+ */
+int ps3_usb_is_bound(void);
+int ps3_usb_is_alive(void);
+int ps3_usb_is_dead(void);
+
+/* ms since the current USB session was ENABLED, 0 if not enabled */
+uint64_t ps3_usb_enabled_for_ms(void);
+
+/* Timestamp (ms) of the F4 enable received over USB this session, 0 if none
+ * yet. F4 marks the point at which the PS3 has registered the controller and
+ * its MAC, i.e. the end of the USB handshake. */
+uint64_t ps3_usb_handshake_done_ms(void);
+
+/* Incremented on every ENABLE; identifies a USB session. */
+uint32_t ps3_usb_session_id(void);
+
+/*
+ * Software unplug: unbind the gadget from the UDC. The PS3 will not drive a
+ * controller over Bluetooth while it is enumerated on USB, so this is what
+ * enables Bluetooth input. ps3_usb_bind() rebinds it.
+ */
+int ps3_usb_soft_unplug(void);
+
 /**
  * Unbind gadget from UDC.
  */

@@ -411,6 +411,12 @@ static void become_master(void) {
  * CONTROL CHANNEL PROTOCOL
  * ============================================================================ */
 
+/* errno from the recv() that observed the link drop. The kernel maps the
+ * HCI disconnect reason onto it (bt_to_errno): 0x08 Connection Timeout ->
+ * ETIMEDOUT, 0x13 Remote User Terminated -> ECONNRESET. 0 means recv()
+ * returned 0 with no error. */
+static int g_drop_errno = 0;
+
 static int handle_get_report(int sock, uint8_t report_id) {
     uint8_t response[68];
     size_t resp_len = 0;
@@ -466,7 +472,11 @@ static int process_control(void) {
     
     uint8_t buf[128];
     ssize_t n = recv(g_ps3_bt_ctx.ctrl_sock, buf, sizeof(buf), MSG_DONTWAIT);
-    if (n <= 0) return (errno == EAGAIN) ? 0 : -1;
+    if (n <= 0) {
+        if (n < 0 && errno == EAGAIN) return 0;
+        g_drop_errno = (n < 0) ? errno : 0;
+        return -1;
+    }
     
     uint8_t trans = buf[0];
     
@@ -544,7 +554,11 @@ static int process_interrupt(void) {
     
     uint8_t buf[64];
     ssize_t n = recv(g_ps3_bt_ctx.intr_sock, buf, sizeof(buf), MSG_DONTWAIT);
-    if (n <= 0) return (errno == EAGAIN) ? 0 : -1;
+    if (n <= 0) {
+        if (n < 0 && errno == EAGAIN) return 0;
+        g_drop_errno = (n < 0) ? errno : 0;
+        return -1;
+    }
     
     /* Handle rumble from PS3 */
     if (n >= 7 && buf[0] == BT_HIDP_DATA_RTYPE_OUTPUT && buf[1] == 0x01) {
@@ -573,6 +587,11 @@ int ps3_bt_init(void) {
 }
 
 int ps3_bt_connect(void) {
+    if (!g_bt_adapter_ready) {
+        printf("[BT] Connect requested but adapter not ready\n");
+        return -1;
+    }
+    
     /* Try to get PS3 MAC from USB handshake first */
     if (!g_ps3_bt_ctx.ps3_addr_valid && ds3_has_ps3_mac()) {
         uint8_t mac[6];
@@ -599,6 +618,7 @@ int ps3_bt_connect(void) {
     
     g_ps3_bt_ctx.ctrl_sock = create_l2cap_socket(L2CAP_PSM_HID_CONTROL, &g_ps3_bt_ctx.ps3_addr);
     if (g_ps3_bt_ctx.ctrl_sock < 0) {
+        printf("[BT] Control channel connect failed: %s\n", strerror(errno));
         g_ps3_bt_ctx.state = BT_STATE_ERROR;
         return -1;
     }
@@ -607,6 +627,7 @@ int ps3_bt_connect(void) {
     
     g_ps3_bt_ctx.intr_sock = create_l2cap_socket(L2CAP_PSM_HID_INTERRUPT, &g_ps3_bt_ctx.ps3_addr);
     if (g_ps3_bt_ctx.intr_sock < 0) {
+        printf("[BT] Interrupt channel connect failed: %s\n", strerror(errno));
         close(g_ps3_bt_ctx.ctrl_sock);
         g_ps3_bt_ctx.ctrl_sock = -1;
         g_ps3_bt_ctx.state = BT_STATE_ERROR;
@@ -713,61 +734,149 @@ int ps3_bt_wake(void) {
  * THREAD FUNCTIONS
  * ============================================================================ */
 
+/*
+ * Connection policy
+ * -----------------
+ * The PS3 treats a USB-connected controller as authoritative and will not
+ * drive it over Bluetooth while it is enumerated (same as a real DS3 with
+ * the cable in). USB is therefore used for the pairing handshake only: once
+ * the PS3 sends F4 over USB, the gadget is unbound from the UDC (a software
+ * unplug) and the HID session is established over Bluetooth. Bluetooth then
+ * carries everything, including wake from standby.
+ *
+ * With USB gone, a Bluetooth link drop is classified by its cause:
+ *
+ *   ETIMEDOUT  (HCI 0x08, supervision timeout)   Interference or range.
+ *                                                The PS3 is still on; reconnect.
+ *   ECONNRESET (HCI 0x13, remote terminated)     The PS3 closed the link,
+ *                                                i.e. it is shutting down.
+ *                                                Enter standby. Do not page
+ *                                                the PS3: a page from a paired
+ *                                                controller is exactly what
+ *                                                wakes it.
+ *   anything else                                Enter standby. The PS button
+ *                                                recovers from a wrong guess.
+ *
+ * If the PS3 never sends F4 over Bluetooth, after BT_FALLBACK_FAILS attempts
+ * the gadget is rebound and input stays on USB until the next USB session
+ * (PS3 power cycle or cable replug).
+ */
+#define BT_HANDOFF_SETTLE_MS    500    /* F4 over USB -> soft unplug */
+#define BT_CONNECT_DELAY_MS     250    /* soft unplug -> first BT connect */
+#define BT_RETRY_FAST_MS        250    /* reconnect pacing: fast for the first few, then slow */
+#define BT_RETRY_FAST_COUNT     3
+#define BT_RETRY_SLOW_MS        1000
+#define BT_F4_TIMEOUT_MS        2000   /* reconnect if no F4 within this of connect */
+#define BT_FALLBACK_FAILS       10     /* consecutive no-F4 reconnects before USB fallback */
+#define BT_ADAPTER_RETRY_MS     2000   /* retry interval while hci0 is absent */
+
 void* ps3_bt_thread(void* arg) {
     (void)arg;
     printf("[BT] Management thread started\n");
     
-    int connect_requested = 0;
-    int was_usb_connected = 0;
-    uint64_t usb_disconnect_time = 0;
     uint64_t next_attempt_ms = 0;
-    int attempts = 0;
-    
-    /* Delay before first BT attempt after USB disconnect (ms) */
-    #define BT_CONNECT_DELAY_MS 250
-    /* Reconnect pacing: quick retries first, then settle to 1/s */
-    #define BT_RETRY_FAST_MS    250
-    #define BT_RETRY_FAST_COUNT 3
-    #define BT_RETRY_SLOW_MS    1000
-    /* PS3 must send F4 enable within this long of connect, else reconnect */
-    #define BT_F4_TIMEOUT_MS    2000
+    int attempts = 0;              /* consecutive connect() failures */
+    int f4_fails = 0;              /* consecutive no-F4 reconnects */
+    uint64_t unplug_time = 0;      /* time of soft unplug, 0 = USB still bound */
+    uint32_t handed_off_session = 0;  /* USB session already handed off or fallen back on */
+    int fallback = 0;              /* input is on USB because BT never got F4 */
+    int had_ps3 = 0;               /* PS3 seen (USB alive or BT ready) since last standby */
+    uint64_t next_adapter_try_ms = 0;
     
     while (g_running) {
-        ps3_usb_check_suspend_timeout();  /* USB unplug detection, see usb_gadget.c */
+        ps3_usb_check_suspend_timeout();  /* USB threads block while the host is quiet */
         
-        if (system_is_standby()) {
+        /* hci0 is often not up yet when the service starts (rfkill unblock
+         * runs immediately before it), and the WiFi toggle chord can take it
+         * down later. Retry until it is available. */
+        if (!g_bt_adapter_ready) {
+            uint64_t t = time_get_ms();
+            if (t >= next_adapter_try_ms) {
+                next_adapter_try_ms = t + BT_ADAPTER_RETRY_MS;
+                if (configure_adapter() == 0) {
+                    printf("[BT] Adapter ready\n");
+                    ps3_bt_load_addr();
+                }
+            }
             usleep(100000);
             continue;
         }
         
+        if (system_is_standby()) {
+            had_ps3 = 0;
+            usleep(100000);
+            continue;
+        }
+        
+        uint64_t now = time_get_ms();
+        int bt_alive = g_ps3_bt_ctx.state >= BT_STATE_READY &&
+                       g_ps3_bt_ctx.state != BT_STATE_ERROR;
+        if (ps3_usb_is_alive() || bt_alive) had_ps3 = 1;
+        
+        /* A new USB session (PS3 power cycle, cable replug, or fallback
+         * rebind) resets the handoff bookkeeping. */
+        uint32_t session = ps3_usb_session_id();
+        if (ps3_usb_is_bound() && session != handed_off_session && fallback) {
+            printf("[BT] New USB session - fallback cleared, will try BT again\n");
+            fallback = 0;
+            f4_fails = 0;
+        }
+        
+        /* Bound to USB (handshake pending, or fallback). The only event of
+         * interest is the PS3 turning off, which shows as USB dead with no
+         * Bluetooth link. */
+        if (ps3_usb_is_bound()) {
+            /* Clear any stale socket from a wake attempt or failed connect so
+             * the next handoff starts from DISCONNECTED. */
+            if (g_ps3_bt_ctx.state == BT_STATE_ERROR) ps3_bt_disconnect();
+            
+            if (had_ps3 && ps3_usb_is_dead() && !bt_alive) {
+                printf("[BT] USB dead while on USB - PS3 is off, entering standby\n");
+                system_enter_standby();
+                had_ps3 = 0;
+                continue;
+            }
+            
+            /* Handoff: F4 over USB means the PS3 has registered this
+             * controller and its MAC. Settle briefly, then unbind. */
+            uint64_t f4 = ps3_usb_handshake_done_ms();
+            
+            if (g_verbose) {
+                static uint64_t wait_log_ms = 0;
+                if (now - wait_log_ms >= 1000) {
+                    wait_log_ms = now;
+                    printf("[BT] Waiting for handoff: usb=%s session=%u(done=%u) f4=%s mac=%d fallback=%d\n",
+                           ps3_usb_is_alive() ? "alive" : ps3_usb_is_dead() ? "dead" : "susp",
+                           session, handed_off_session,
+                           f4 ? "yes" : "no", ds3_has_ps3_mac(), fallback);
+                }
+            }
+            if (!fallback && session != handed_off_session && f4 &&
+                now - f4 >= BT_HANDOFF_SETTLE_MS && ds3_has_ps3_mac()) {
+                handed_off_session = session;
+                if (ps3_usb_soft_unplug() == 0) {
+                    unplug_time = now;
+                    next_attempt_ms = now + BT_CONNECT_DELAY_MS;
+                    attempts = 0;
+                    f4_fails = 0;
+                }
+            }
+            usleep(50000);
+            continue;
+        }
+        
+        /* --- USB unbound: Bluetooth owns the session ------------------------ */
         switch (g_ps3_bt_ctx.state) {
             case BT_STATE_DISCONNECTED:
-                if (g_usb_enabled) {
-                    was_usb_connected = 1;
-                    usb_disconnect_time = 0;
-                    attempts = 0;
-                    next_attempt_ms = 0;
-                }
+                if (fallback) { usleep(100000); break; }
                 
-                /* Track when USB disconnected */
-                if (was_usb_connected && !g_usb_enabled && usb_disconnect_time == 0) {
-                    usb_disconnect_time = time_get_ms();
-                }
-                
-                /* Connect once USB has been gone for BT_CONNECT_DELAY_MS,
-                 * then keep retrying until it sticks or USB comes back */
-                if (was_usb_connected && !g_usb_enabled && !connect_requested && 
-                    ds3_has_ps3_mac() && usb_disconnect_time > 0) {
-                    
-                    uint64_t now = time_get_ms();
-                    if (now - usb_disconnect_time >= BT_CONNECT_DELAY_MS && now >= next_attempt_ms) {
-                        attempts++;
-                        if (!system_is_standby() && ps3_bt_connect() == 0) {
-                            connect_requested = 1;
-                        } else {
-                            next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
-                                                     ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
-                        }
+                if (ds3_has_ps3_mac() && unplug_time && now >= next_attempt_ms) {
+                    attempts++;
+                    if (ps3_bt_connect() == 0) {
+                        attempts = 0;
+                    } else {
+                        next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
+                                                 ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
                     }
                 }
                 usleep(50000);
@@ -775,23 +884,47 @@ void* ps3_bt_thread(void* arg) {
                 
             case BT_STATE_READY:
             case BT_STATE_ENABLED:
-                /* The PS3 only honors input after it sends F4 enable. If it
-                 * never does (happens after an unclean previous session), a
-                 * fresh connection is what fixes it - so do that ourselves. */
+                /* The PS3 only honors input after it sends F4. If it never
+                 * does (seen after an unclean previous session), a fresh
+                 * connection fixes it. It accepted this connect, so it is on
+                 * and paging it again is safe. */
                 if (g_ps3_bt_ctx.state == BT_STATE_READY &&
-                    time_get_ms() - g_ps3_bt_ctx.connect_time >= BT_F4_TIMEOUT_MS) {
-                    printf("[BT] No F4 enable from PS3 within %d ms - reconnecting\n", BT_F4_TIMEOUT_MS);
+                    now - g_ps3_bt_ctx.connect_time >= BT_F4_TIMEOUT_MS) {
+                    f4_fails++;
+                    printf("[BT] No F4 enable from PS3 within %d ms - reconnecting (%d/%d)\n",
+                           BT_F4_TIMEOUT_MS, f4_fails, BT_FALLBACK_FAILS);
                     ps3_bt_disconnect();
-                    connect_requested = 0;
-                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
+                    
+                    if (f4_fails >= BT_FALLBACK_FAILS) {
+                        printf("[BT] Giving up on BT for this session - rebinding USB\n");
+                        fallback = 1;
+                        if (ps3_usb_bind() < 0) {
+                            printf("[BT] USB rebind failed - will keep trying BT\n");
+                            fallback = 0;
+                            f4_fails = 0;
+                        }
+                        continue;
+                    }
+                    next_attempt_ms = now + BT_RETRY_FAST_MS;
                     continue;
                 }
                 
                 if (process_control() < 0 || process_interrupt() < 0) {
-                    printf("[BT] Link dropped - reconnecting\n");
+                    int err = g_drop_errno;
+                    g_drop_errno = 0;
                     ps3_bt_disconnect();
-                    connect_requested = 0;
-                    next_attempt_ms = time_get_ms() + BT_RETRY_FAST_MS;
+                    g_ps3_bt_ctx.reconnect_count++;
+                    
+                    if (err == ETIMEDOUT) {
+                        printf("[BT] Link dropped: supervision timeout - PS3 still on, reconnecting\n");
+                        next_attempt_ms = now + BT_RETRY_FAST_MS;
+                        attempts = 0;
+                    } else {
+                        printf("[BT] Link dropped: %s (errno %d) - PS3 turned off, entering standby\n",
+                               err ? strerror(err) : "closed by peer", err);
+                        system_enter_standby();
+                        had_ps3 = 0;
+                    }
                     continue;
                 }
                 
@@ -799,11 +932,10 @@ void* ps3_bt_thread(void* arg) {
                  * kernel L2CAP send buffer; est.queue = how long a report sent
                  * now waits behind that backlog. est.in->air adds the 25Hz
                  * gate (~20ms avg) and DS5->Pi (~4ms); PS3-side is unknown. */
-                {
+                if (g_verbose) {
                     static uint64_t stat_last_ms = 0;
                     static uint32_t stat_last_sent = 0, stat_last_drop = 0;
                     static int stat_last_outq = 0;
-                    uint64_t now = time_get_ms();
                     if (stat_last_ms == 0) stat_last_ms = now;
                     if (g_ps3_bt_ctx.state == BT_STATE_ENABLED && now - stat_last_ms >= 1000) {
                         int outq = 0;
@@ -830,32 +962,13 @@ void* ps3_bt_thread(void* arg) {
                 
             case BT_STATE_ERROR:
                 ps3_bt_disconnect();
-                connect_requested = 0;
-                next_attempt_ms = time_get_ms() + BT_RETRY_SLOW_MS;
+                next_attempt_ms = now + (attempts <= BT_RETRY_FAST_COUNT
+                                         ? BT_RETRY_FAST_MS : BT_RETRY_SLOW_MS);
                 break;
                 
             default:
                 usleep(100000);
                 break;
-        }
-        
-        /* Disconnect BT if USB reconnects (with hysteresis) */
-        if (g_usb_enabled && g_ps3_bt_ctx.state >= BT_STATE_READY) {
-            /* Wait a bit to make sure USB is stable before disconnecting BT */
-            static int usb_stable_count = 0;
-            usb_stable_count++;
-            
-            if (usb_stable_count >= 10) {  /* 100ms at 10ms loop rate */
-                printf("[BT] USB reconnected, disconnecting BT\n");
-                ps3_bt_disconnect();
-                connect_requested = 0;
-                was_usb_connected = 1;
-                usb_stable_count = 0;
-            }
-        } else {
-            /* Reset counter if USB not enabled */
-            static int usb_stable_count = 0;
-            usb_stable_count = 0;
         }
     }
     

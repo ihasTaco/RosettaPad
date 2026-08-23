@@ -44,10 +44,6 @@ What should you expect if you setup RosettaPad right now?
 
 Setup for RosettaPad takes about 15 minutes from start to finish. Once setup you will have all the features you'd expect on a normal DualShock 3 controller but on a DualSense, including the home button and rumble working with a few features thrown in on top like a usable trackpad that works as a precision right analog stick.  
 
-> [!IMPORTANT]
-> The only exception to the above is Pi to PS3 bluetooth connectivity is required to enable some features like motion controls (sixaxis) and wake from standby. Thankfully this has mostly been solved and implemented already into RosettaPad! But... Pi to PS3 over bluetooth has **~1 second latency** and I have not been able to figure out how to lower that yet.  
-> Until the latency issue is fixed, bluetooth has been disabled. Which means any games that require motion controls, won't work :/ 
-
 So, can you use a DualSense on a PS3? For the most part, yes! It works great with RosettaPad.
 
 ### What Works Right Now?
@@ -60,6 +56,7 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | Complete button translation | ✅ | Works without issues. This includes all face, d-pad, shoulders, triggers, and PS button. See [What Can't Be Emulated](#what-cant-be-emulated) |
 | Complete analog input translation | ✅ | Works without issues. This includes analog sticks and analog triggers. |
 | Rumble | ✅ | Both motors work without issues |
+| PS3 Wake from Standby | ✅ | Works without issues. |
 | Battery display on PS3 | ✅ | I know this is a small feature, but im proud of this one lol. The DualSense sends current battery status (Whether it is plugged in and charging, charged, or discharging) and it gets displayed in the PS3 UI. |
 
 
@@ -68,8 +65,7 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | Feature | Status | Notes |
 |---------|:------:|-------|
 | Safe Mode | 🚧 | Works but needs a service restart in order to be detected, want to make this automatic |
-| Motion controls | ⚠️ | Technically works, but there is currently an issue that causes extreme values. **Note:** Motion controls only work when Pi to PS3 is active. Bluetooth is top priority to get working right, then this. | 
-| PS3 Wake from Standby | ⚠️ | This works a little too well right now. While the Pi is connected to the PS3 over bluetooth, the Pi continuously sends power on packets to the PS3, and keeps turning the PS3 on. This feature is disabled for now while the Pi is connected via USB (See [How to use bluetooth](#todo) on what not to do to prevent this) |
+| Motion controls | ⚠️ | Technically works, but there is currently an issue that causes extreme values. **Note:** Motion controls only work when bluetooth is active. | 
 | Touchpad as precision right stick | 🚧 | It works, just not as well as I hoped | 
 
 ### What's Planned?

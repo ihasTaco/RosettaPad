@@ -117,6 +117,16 @@ void* controller_input_thread(void* arg) {
                 printf("[Input] Controller connected: %s\n", g_active_driver->info->name);
                 controller_set_active(g_controller_fd, g_active_driver);
                 controller_set_active_driver(g_active_driver);
+                
+                /* A controller connecting during standby is itself the wake
+                 * signal: the user pressed PS to turn it on, and that press
+                 * is over by the time it reconnects, so the rising-edge
+                 * check below would never see it. */
+                if (system_is_standby()) {
+                    printf("[Input] Controller connected in standby - waking PS3\n");
+                    g_last_home_press_time = time_get_ms();
+                    system_exit_standby();
+                }
             } else {
                 sleep(1);
             }
@@ -201,8 +211,17 @@ void* controller_input_thread(void* arg) {
  * ============================================================================ */
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+            g_verbose = 1;
+        } else {
+            fprintf(stderr, "Usage: %s [-v|--verbose]\n", argv[0]);
+            return 1;
+        }
+    }
+    const char* env = getenv("ROSETTAPAD_VERBOSE");
+    if (env && env[0] == '1') g_verbose = 1;
+    if (g_verbose) printf("[Main] Verbose diagnostics on\n");
     
     pthread_t input_tid;
     pthread_t output_tid;
