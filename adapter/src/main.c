@@ -76,7 +76,7 @@ static void signal_handler(int sig) {
 static void print_banner(void) {
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║                    RosettaPad v0.9                         ║\n");
+    printf("║                    RosettaPad v1.0.0                       ║\n");
     printf("║              Universal Controller Adapter                  ║\n");
     printf("╠════════════════════════════════════════════════════════════╣\n");
     printf("║  Controllers:  DualSense (more coming)                     ║\n");
