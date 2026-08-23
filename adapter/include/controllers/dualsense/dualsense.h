@@ -11,12 +11,11 @@
  * The DualSense communicates via Bluetooth HID with 78-byte input reports.
  * Output reports (rumble, LEDs) are also 78 bytes with CRC32 validation.
  * 
- * LED control uses a hybrid approach:
- * - Lightbar: Controlled via kernel sysfs (avoids driver conflicts)
- * - Rumble: Sent via hidraw output reports
- * 
- * This split is necessary because the hid-playstation kernel driver
- * manages LEDs, and sending LED commands via hidraw conflicts with it.
+ * Rumble, player LEDs and lightbar are sent together in a single hidraw
+ * output report (0x31). The kernel hid-playstation driver also exposes the
+ * LEDs via sysfs; that path is only used to set the initial lightbar colour
+ * on connect, since driving LEDs through sysfs during normal operation makes
+ * the kernel queue extra BT packets alongside ours.
  */
 
 #ifndef ROSETTAPAD_DUALSENSE_H
@@ -52,12 +51,15 @@
 #define DS_OFF_BUTTONS1       9    /* D-pad (low nibble) + face buttons */
 #define DS_OFF_BUTTONS2       10   /* Shoulders, sticks, options/create */
 #define DS_OFF_BUTTONS3       11   /* PS, touchpad, mute */
-#define DS_OFF_GYRO_X         16
-#define DS_OFF_GYRO_Y         18
-#define DS_OFF_GYRO_Z         20
-#define DS_OFF_ACCEL_X        22
-#define DS_OFF_ACCEL_Y        24
-#define DS_OFF_ACCEL_Z        26
+/* BT report 0x31: report ID [0], sequence [1], then the same input struct
+ * the kernel's hid-playstation uses (sticks at struct[0]). Gyro lives at
+ * struct[15..20] and accel at struct[21..26], so +2 for the BT header. */
+#define DS_OFF_GYRO_X         17   /* pitch */
+#define DS_OFF_GYRO_Y         19   /* yaw   */
+#define DS_OFF_GYRO_Z         21   /* roll  */
+#define DS_OFF_ACCEL_X        23
+#define DS_OFF_ACCEL_Y        25   /* ~+8192 (1g) when lying flat */
+#define DS_OFF_ACCEL_Z        27
 #define DS_OFF_TOUCHPAD       34
 #define DS_OFF_BATTERY        54
 

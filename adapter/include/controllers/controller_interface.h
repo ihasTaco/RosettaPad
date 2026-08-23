@@ -124,15 +124,18 @@ typedef struct {
     uint8_t left_trigger;
     uint8_t right_trigger;
     
-    /* Motion sensors (if CONTROLLER_CAP_MOTION) */
-    /* Raw sensor values - controller-specific scaling */
-    /* Console layer handles conversion to target format */
-    int16_t accel_x;
-    int16_t accel_y;
-    int16_t accel_z;
-    int16_t gyro_x;
-    int16_t gyro_y;
-    int16_t gyro_z;
+    /* Motion sensors (if CONTROLLER_CAP_MOTION)
+     * Calibrated, in the Linux hid-playstation units so any driver can feed them:
+     *   accel: 8192 counts per g        (DS_ACC_RES_PER_G)
+     *   gyro:  1024 counts per deg/s    (DS_GYRO_RES_PER_DEG_S)
+     * int32 because gyro at 1024/deg/s can reach +/-2M; int16 wrapped at 32 deg/s.
+     * Console layer converts to the target controller's native format. */
+    int32_t accel_x;
+    int32_t accel_y;
+    int32_t accel_z;
+    int32_t gyro_x;    /* pitch */
+    int32_t gyro_y;    /* yaw   */
+    int32_t gyro_z;    /* roll  */
     
     /* Touchpad (if CONTROLLER_CAP_TOUCHPAD) */
     struct {

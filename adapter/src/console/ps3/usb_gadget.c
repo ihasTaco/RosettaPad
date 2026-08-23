@@ -567,7 +567,7 @@ void* ps3_usb_output_thread(void* arg) {
             continue;
         }
         
-        /* Debug: log first few output reports to see structure */
+        /* Log the first few output reports */
         if (++output_log_count <= 10) {
             printf("[USB] Output report (%zd bytes):", n);
             for (ssize_t i = 0; i < n && i < 16; i++) {
