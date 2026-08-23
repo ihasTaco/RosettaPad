@@ -53,6 +53,7 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | DualSense to Raspberry Pi connection via bluetooth | ✅ | Works without issues. |
 | Raspberry Pi to PS3 connection via USB | ✅ | Works without issues. |
 | Raspberry Pi to PS3 connection via bluetooth | ✅ | Works without issues. |
+| Motion controls | ✅ | Works without issues. | 
 | Complete button translation | ✅ | Works without issues. This includes all face, d-pad, shoulders, triggers, and PS button. See [What Can't Be Emulated](#what-cant-be-emulated) |
 | Complete analog input translation | ✅ | Works without issues. This includes analog sticks and analog triggers. |
 | Rumble | ✅ | Both motors work without issues |
@@ -65,7 +66,6 @@ So, can you use a DualSense on a PS3? For the most part, yes! It works great wit
 | Feature | Status | Notes |
 |---------|:------:|-------|
 | Safe Mode | 🚧 | Works but needs a service restart in order to be detected, want to make this automatic |
-| Motion controls | ⚠️ | Technically works, but there is currently an issue that causes extreme values. **Note:** Motion controls only work when bluetooth is active. | 
 | Touchpad as precision right stick | 🚧 | It works, just not as well as I hoped | 
 
 ### What's Planned?
