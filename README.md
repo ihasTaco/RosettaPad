@@ -1,6 +1,6 @@
 # RosettaPad
 
-**Use a DualSense controller on your PS3 to get working PS (Home) button, motion controls and rumble!**
+**Use a DualSense controller on your PS3 to get a working PS (Home) button, motion controls and rumble!**
 
 RosettaPad runs on a Raspberry Pi Zero 2 W and makes the PS3 see your DualSense as a genuine DualShock 3, so features that generic third-party adapters lose (PS/Home button, motion controls, rumble, battery status) work as expected. Setup takes about 15 minutes.
 
